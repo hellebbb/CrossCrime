@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>MURDOKU — Cluedo × Sudoku</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #1a1410;
+    --paper: #f4ecd8;
+    --ink: #2b1810;
+    --accent: #8b1c1c;
+    --gold: #c9a449;
+    --shadow: 0 4px 12px rgba(0,0,0,0.4);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    padding: 16px;
+    font-family: Georgia, 'Times New Roman', serif;
+    background:
+      radial-gradient(circle at 20% 30%, #2a1f18 0%, var(--bg) 60%),
+      var(--bg);
+    color: var(--paper);
+    min-height: 100vh;
+  }
+  header { text-align: center; margin-bottom: 14px; }
+  h1 {
+    font-family: 'Courier New', monospace;
+    font-weight: 900; letter-spacing: 8px;
+    margin: 0; font-size: 38px;
+    color: var(--gold);
+    text-shadow: 2px 2px 0 var(--accent);
+  }
+  .tagline { font-style: italic; color: #b6a78a; margin-top: 4px; font-size: 14px; }
+
+  .controles {
+    display: flex; gap: 10px; justify-content: center;
+    align-items: center; flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+  .controles select, .controles button {
+    background: var(--paper); color: var(--ink);
+    border: 2px solid var(--ink);
+    padding: 8px 14px;
+    font-family: inherit; font-size: 14px;
+    cursor: pointer;
+    box-shadow: var(--shadow);
+  }
+  .controles button.primary { background: var(--accent); color: var(--paper); border-color: var(--accent); }
+  .controles button:hover { transform: translateY(-1px); }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr minmax(280px, 360px);
+    gap: 20px;
+    max-width: 1400px; margin: 0 auto;
+  }
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+  }
+
+  .tablero-wrap {
+    background: var(--paper); color: var(--ink);
+    padding: 14px; border: 4px double var(--ink);
+    box-shadow: var(--shadow);
+    display: flex; justify-content: center; align-items: flex-start;
+    overflow: auto;
+  }
+  #tablero { display: grid; gap: 0; }
+  .celda {
+    display: flex; align-items: center; justify-content: center;
+    font-weight: bold; font-size: 18px;
+    position: relative; cursor: pointer;
+    user-select: none;
+  }
+  .celda.obstaculo {
+    background: #3b2a1a !important;
+    color: var(--gold);
+  }
+  .celda.obstaculo::before { content: "▣"; font-size: 22px; }
+  .celda.victima-cell { box-shadow: inset 0 0 0 2px var(--accent); }
+  .celda.hover { outline: 3px solid var(--gold); outline-offset: -3px; }
+  .pieza-victima {
+    color: var(--accent);
+    text-shadow: 0 0 6px rgba(139,28,28,0.6);
+    font-size: 24px;
+  }
+  .pieza-sospechoso {
+    background: #2b1810;
+    color: var(--paper);
+    border-radius: 50%;
+    width: 78%; height: 78%;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    font-size: 15px;
+  }
+
+  .panel { display: flex; flex-direction: column; gap: 14px; }
+  .seccion {
+    background: var(--paper); color: var(--ink);
+    padding: 12px 16px;
+    border: 2px solid var(--ink);
+    box-shadow: var(--shadow);
+  }
+  .seccion h2 {
+    margin: 0 0 10px;
+    font-size: 16px; text-transform: uppercase;
+    letter-spacing: 2px;
+    border-bottom: 2px solid var(--ink);
+    padding-bottom: 4px;
+  }
+  .sospechosos { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    background: #fff8e8;
+    border: 2px solid var(--ink);
+    padding: 5px 10px;
+    border-radius: 20px;
+    font-weight: bold; cursor: grab;
+    box-shadow: 1px 1px 0 var(--ink);
+    user-select: none;
+    font-size: 13px;
+  }
+  .chip[draggable=true]:active { cursor: grabbing; }
+  .chip.colocado { opacity: 0.35; cursor: default; }
+  .chip.victima { background: var(--accent); color: var(--paper); border-color: var(--ink); cursor: default; }
+
+  .pistas {
+    list-style: none; padding: 0; margin: 0;
+    max-height: 360px; overflow-y: auto;
+  }
+  .pistas li {
+    background: #fffbe5;
+    border-left: 4px solid var(--accent);
+    padding: 7px 10px; margin-bottom: 5px;
+    font-size: 13px; line-height: 1.4;
+  }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 24px;
+    transform: translateX(-50%);
+    background: var(--ink); color: var(--paper);
+    padding: 10px 20px; border: 2px solid var(--gold);
+    font-weight: bold; font-size: 14px;
+    box-shadow: var(--shadow);
+    opacity: 0; transition: opacity 0.3s;
+    pointer-events: none; z-index: 50;
+    max-width: 90vw; text-align: center;
+  }
+  .toast.show { opacity: 1; }
+  .toast.victoria { background: #2a5a2a; border-color: #6fb96f; }
+  .toast.error { background: var(--accent); border-color: var(--gold); }
+
+  .modal {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.75);
+    display: none;
+    align-items: center; justify-content: center;
+    z-index: 100;
+  }
+  .modal.show { display: flex; }
+  .modal-content {
+    background: var(--paper); color: var(--ink);
+    max-width: 500px; padding: 28px;
+    border: 4px double var(--accent);
+    text-align: center;
+    box-shadow: var(--shadow);
+  }
+  .modal-content h2 {
+    color: var(--accent); margin-top: 0;
+    font-size: 26px; letter-spacing: 4px;
+  }
+  .modal-content button {
+    background: var(--accent); color: var(--paper);
+    border: none; padding: 10px 20px;
+    font-family: inherit; font-size: 15px;
+    cursor: pointer; margin-top: 16px;
+  }
+  .leyenda { font-size: 12px; line-height: 1.5; margin: 0; color: #3a2a1c; }
+  .leyenda b { color: var(--accent); }
+</style>
+</head>
+<body>
+  <header>
+    <h1>MURDOKU</h1>
+    <div class="tagline">Cluedo × Sudoku — encuentra al asesino por pura deducción</div>
+  </header>
+
+  <div class="controles">
+    <label style="color:var(--paper); font-size:14px;">
+      Dificultad:
+      <select id="dificultad">
+        <option value="muy_facil">Muy fácil (6×6, 4 sosp.)</option>
+        <option value="facil" selected>Fácil (8×8, 6 sosp.)</option>
+        <option value="moderado">Moderado (10×10, 9 sosp.)</option>
+        <option value="dificil">Difícil (12×12, 11 sosp.)</option>
+        <option value="muy_dificil">Muy difícil (16×16, 15 sosp.)</option>
+      </select>
+    </label>
+    <button id="nuevo" class="primary">Nuevo caso</button>
+    <button id="validar">Validar caso</button>
+    <button id="limpiar">Limpiar tablero</button>
+    <button id="revelar">Rendirse</button>
+  </div>
+
+  <div class="layout">
+    <div class="tablero-wrap">
+      <div id="tablero" role="grid" aria-label="Tablero de Murdoku"></div>
+    </div>
+    <aside class="panel">
+      <div class="seccion">
+        <h2>Sospechosos</h2>
+        <div class="sospechosos" id="sospechosos"></div>
+      </div>
+      <div class="seccion">
+        <h2>Pistas del caso</h2>
+        <ol class="pistas" id="pistas"></ol>
+      </div>
+      <div class="seccion">
+        <h2>Cómo jugar</h2>
+        <p class="leyenda">
+          Arrastra cada chip a una casilla del tablero. <b>Dos personas no pueden compartir fila ni columna.</b>
+          La <b>víctima ★</b> ya está revelada — el asesino siempre está en su misma habitación.
+          Doble clic en una pieza para retirarla. Los bordes gruesos delimitan habitaciones.
+        </p>
+      </div>
+    </aside>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <div class="modal" id="modal">
+    <div class="modal-content">
+      <h2 id="modalTitulo">¡Caso resuelto!</h2>
+      <p id="modalCuerpo" style="font-size:15px; line-height:1.5;"></p>
+      <button id="modalCerrar">Cerrar</button>
+    </div>
+  </div>
+
+<script>
+'use strict';
+
+const CONFIG_DIFICULTAD = {
+    muy_facil:   { tamano: 6,  sospechosos: 4,  habitaciones: 3, obstaculos: 4  },
+    facil:       { tamano: 8,  sospechosos: 6,  habitaciones: 4, obstaculos: 6  },
+    moderado:    { tamano: 10, sospechosos: 9,  habitaciones: 5, obstaculos: 10 },
+    dificil:     { tamano: 12, sospechosos: 11, habitaciones: 6, obstaculos: 15 },
+    muy_dificil: { tamano: 16, sospechosos: 15, habitaciones: 8, obstaculos: 25 }
+};
+
+const NOMBRES = [
+    "Aitor","Bea","Cira","Dante","Elena","Fran","Greta","Hugo",
+    "Iris","Jano","Kira","Lía","Mateo","Nora","Olmo"
+];
+
+const PALETA_HAB = [
+    "#fde4cf","#e4f1fe","#e9f5db","#fff1c1","#fbe5e1",
+    "#e0d7f5","#d6efe1","#fcd5ce","#ddedea","#f0e1d4"
+];
+
+function randInt(n){ return Math.floor(Math.random()*n); }
+function shuffle(a){ for(let i=a.length-1;i>0;i--){const j=randInt(i+1);[a[i],a[j]]=[a[j],a[i]];} return a; }
+function pick(a){ return a[randInt(a.length)]; }
+
+class MurdokuEngine {
+  constructor(dificultad){
+    this.dificultad = dificultad;
+    this.config = CONFIG_DIFICULTAD[dificultad];
+    this.tamano = this.config.tamano;
+    this.reset();
+  }
+
+  reset(){
+    const T = this.tamano;
+    this.tableroReal = Array.from({length:T},()=>Array(T).fill(null));
+    this.tableroJugador = Array.from({length:T},()=>Array(T).fill(null));
+    this.habitaciones = Array.from({length:T},()=>Array(T).fill(0));
+    this.sospechosos = [];
+    this.victima = { id:'V', nombre:'Virgilio', r:-1, c:-1 };
+    this.asesinoId = null;
+    this.pistas = [];
+  }
+
+  generar(){
+    for(let intento=0; intento<40; intento++){
+      this.reset();
+      this.generarHabitaciones();
+      if(!this.generarSolucionValida()) continue;
+      this.colocarObstaculos();
+      if(this.crearPistasUnicas()) return true;
+    }
+    return false;
+  }
+
+  generarHabitaciones(){
+    const T = this.tamano;
+    const N = this.config.habitaciones;
+    const grid = this.habitaciones;
+    const frontiers = [];
+    const usadas = new Set();
+    for(let id=1; id<=N; id++){
+      let r, c, k=0;
+      do { r=randInt(T); c=randInt(T); k++; }
+      while (usadas.has(r*T+c) && k<500);
+      usadas.add(r*T+c);
+      grid[r][c] = id;
+      frontiers.push([{r, c, id}]);
+    }
+    let restantes = T*T - N;
+    let safety = 0;
+    while(restantes > 0 && safety++ < T*T*20){
+      let progreso = false;
+      for(const f of frontiers){
+        if(f.length === 0) continue;
+        const idx = randInt(f.length);
+        const cell = f[idx];
+        const dirs = shuffle([[-1,0],[1,0],[0,-1],[0,1]]);
+        let expanded = false;
+        for(const [dr, dc] of dirs){
+          const nr = cell.r + dr, nc = cell.c + dc;
+          if(nr<0||nr>=T||nc<0||nc>=T) continue;
+          if(grid[nr][nc] !== 0) continue;
+          grid[nr][nc] = cell.id;
+          f.push({r:nr, c:nc, id:cell.id});
+          restantes--;
+          expanded = true;
+          progreso = true;
+          break;
+        }
+        if(!expanded) f.splice(idx, 1);
+      }
+      if(!progreso) break;
+    }
+    for(let r=0;r<T;r++) for(let c=0;c<T;c++) if(grid[r][c]===0){
+      for(const [dr,dc] of [[-1,0],[1,0],[0,-1],[0,1]]){
+        const nr=r+dr, nc=c+dc;
+        if(nr>=0&&nr<T&&nc>=0&&nc<T&&grid[nr][nc]!==0){ grid[r][c]=grid[nr][nc]; break; }
+      }
+      if(grid[r][c]===0) grid[r][c]=1;
+    }
+  }
+
+  generarSolucionValida(){
+    const T = this.tamano;
+    const K = this.config.sospechosos + 1;
+    if(K > T) return false;
+    for(let attempt=0; attempt<200; attempt++){
+      const filas = shuffle([...Array(T).keys()]).slice(0, K);
+      const cols  = shuffle([...Array(T).keys()]).slice(0, K);
+      const perm  = shuffle([...Array(K).keys()]);
+      const posiciones = filas.map((f,i) => ({r:f, c:cols[perm[i]]}));
+      const ordenV = shuffle([...Array(K).keys()]);
+      for(const vi of ordenV){
+        const habV = this.habitaciones[posiciones[vi].r][posiciones[vi].c];
+        const coMates = [];
+        for(let i=0;i<K;i++){
+          if(i===vi) continue;
+          if(this.habitaciones[posiciones[i].r][posiciones[i].c] === habV) coMates.push(i);
+        }
+        if(coMates.length === 0) continue;
+        this.victima.r = posiciones[vi].r;
+        this.victima.c = posiciones[vi].c;
+        this.tableroReal[this.victima.r][this.victima.c] = 'V';
+        const idxAses = pick(coMates);
+        let nIdx = 0;
+        const nombresMezcla = shuffle([...NOMBRES]);
+        for(let i=0;i<K;i++){
+          if(i===vi) continue;
+          const id = String.fromCharCode(65 + nIdx);
+          const nombre = nombresMezcla[nIdx % nombresMezcla.length];
+          const s = { id, nombre, r:posiciones[i].r, c:posiciones[i].c };
+          this.sospechosos.push(s);
+          this.tableroReal[s.r][s.c] = id;
+          if(i === idxAses) this.asesinoId = id;
+          nIdx++;
+        }
+        return true;
+      }
+    }
+    return false;
+  }
+
+  colocarObstaculos(){
+    const T = this.tamano;
+    let intentos = 0, colocados = 0;
+    const objetivo = this.config.obstaculos;
+    while(colocados < objetivo && intentos < objetivo * 30){
+      intentos++;
+      const r = randInt(T), c = randInt(T);
+      if(this.tableroReal[r][c] !== null) continue;
+      this.tableroReal[r][c] = 'X';
+      colocados++;
+    }
+  }
+
+  todosPersonajes(){ return [this.victima, ...this.sospechosos]; }
+
+  generarPistasCandidatas(){
+    const pistas = [];
+    const T = this.tamano;
+    const todos = this.todosPersonajes();
+
+    for(let i=0;i<todos.length;i++){
+      for(let j=i+1;j<todos.length;j++){
+        const A = todos[i], B = todos[j];
+        const dist = Math.abs(A.r-B.r) + Math.abs(A.c-B.c);
+        const habA = this.habitaciones[A.r][A.c];
+        const habB = this.habitaciones[B.r][B.c];
+
+        pistas.push({
+          texto: `${A.nombre} estaba a ${dist} casillas de ${B.nombre}.`,
+          check: (s) => {
+            const pa = s[A.id], pb = s[B.id];
+            if(!pa || !pb) return null;
+            return Math.abs(pa.r-pb.r)+Math.abs(pa.c-pb.c) === dist;
+          },
+          a: A.id, b: B.id, peso: 2
+        });
+
+        if(habA === habB){
+          pistas.push({
+            texto: `${A.nombre} y ${B.nombre} estaban en la misma habitación.`,
+            check: (s) => {
+              const pa = s[A.id], pb = s[B.id];
+              if(!pa || !pb) return null;
+              return this.habitaciones[pa.r][pa.c] === this.habitaciones[pb.r][pb.c];
+            },
+            a:A.id, b:B.id, peso: 3
+          });
+        } else {
+          pistas.push({
+            texto: `${A.nombre} no compartía habitación con ${B.nombre}.`,
+            check: (s) => {
+              const pa = s[A.id], pb = s[B.id];
+              if(!pa || !pb) return null;
+              return this.habitaciones[pa.r][pa.c] !== this.habitaciones[pb.r][pb.c];
+            },
+            a:A.id, b:B.id, peso: 1
+          });
+        }
+
+        if(A.r < B.r){
+          pistas.push({texto:`${A.nombre} estaba al norte de ${B.nombre}.`, check:(s)=>{const a=s[A.id],b=s[B.id]; if(!a||!b) return null; return a.r<b.r;}, a:A.id,b:B.id,peso:2});
+        } else if(A.r > B.r){
+          pistas.push({texto:`${A.nombre} estaba al sur de ${B.nombre}.`, check:(s)=>{const a=s[A.id],b=s[B.id]; if(!a||!b) return null; return a.r>b.r;}, a:A.id,b:B.id,peso:2});
+        }
+        if(A.c < B.c){
+          pistas.push({texto:`${A.nombre} estaba al oeste de ${B.nombre}.`, check:(s)=>{const a=s[A.id],b=s[B.id]; if(!a||!b) return null; return a.c<b.c;}, a:A.id,b:B.id,peso:2});
+        } else if(A.c > B.c){
+          pistas.push({texto:`${A.nombre} estaba al este de ${B.nombre}.`, check:(s)=>{const a=s[A.id],b=s[B.id]; if(!a||!b) return null; return a.c>b.c;}, a:A.id,b:B.id,peso:2});
+        }
+      }
+    }
+
+    for(const P of todos){
+      const dirs = [["arriba",-1,0],["abajo",1,0],["a su izquierda",0,-1],["a su derecha",0,1]];
+      for(const [nombreDir, dr, dc] of dirs){
+        const nr = P.r+dr, nc = P.c+dc;
+        if(nr>=0 && nr<T && nc>=0 && nc<T && this.tableroReal[nr][nc] === 'X'){
+          pistas.push({
+            texto: `${P.nombre} tenía un obstáculo ${nombreDir}.`,
+            check: (s) => {
+              const p = s[P.id]; if(!p) return null;
+              const nr2 = p.r+dr, nc2 = p.c+dc;
+              if(nr2<0||nr2>=T||nc2<0||nc2>=T) return false;
+              return this.tableroReal[nr2][nc2] === 'X';
+            },
+            a: P.id, peso: 3
+          });
+        }
+      }
+      if(P.r === 0)   pistas.push({texto:`${P.nombre} estaba pegado a la pared norte.`,  check:(s)=>{const p=s[P.id]; if(!p) return null; return p.r===0;},   a:P.id, peso:4});
+      if(P.r === T-1) pistas.push({texto:`${P.nombre} estaba pegado a la pared sur.`,    check:(s)=>{const p=s[P.id]; if(!p) return null; return p.r===T-1;}, a:P.id, peso:4});
+      if(P.c === 0)   pistas.push({texto:`${P.nombre} estaba pegado a la pared oeste.`,  check:(s)=>{const p=s[P.id]; if(!p) return null; return p.c===0;},   a:P.id, peso:4});
+      if(P.c === T-1) pistas.push({texto:`${P.nombre} estaba pegado a la pared este.`,   check:(s)=>{const p=s[P.id]; if(!p) return null; return p.c===T-1;}, a:P.id, peso:4});
+    }
+
+    pistas.sort((a,b) => b.peso - a.peso + (Math.random()-0.5)*0.5);
+    return pistas;
+  }
+
+  crearPistasUnicas(){
+    const candidatas = this.generarPistasCandidatas();
+    const elegidas = [];
+    const cubiertos = new Set();
+
+    for(const susp of this.sospechosos){
+      const idx = candidatas.findIndex(p => (p.a===susp.id || p.b===susp.id) && !elegidas.includes(p));
+      if(idx >= 0){ elegidas.push(candidatas[idx]); cubiertos.add(susp.id); }
+    }
+    const vIdx = candidatas.findIndex(p => (p.a==='V'||p.b==='V') && !elegidas.includes(p));
+    if(vIdx >= 0) elegidas.push(candidatas[vIdx]);
+
+    const maxPasos = this.tamano <= 8 ? 200000
+                   : this.tamano <= 12 ? 600000
+                   : 1500000;
+
+    let intentos = 0;
+    while(intentos < 200){
+      intentos++;
+      const conteo = this.contarSoluciones(elegidas, 2, maxPasos);
+      if(conteo === 1){
+        this.pistas = elegidas;
+        return true;
+      }
+      if(conteo === 0) return false;
+      const next = candidatas.find(p => !elegidas.includes(p));
+      if(!next) break;
+      elegidas.push(next);
+    }
+    return false;
+  }
+
+  contarSoluciones(constraints, limite=2, maxPasos=500000){
+    const T = this.tamano;
+    const todos = this.todosPersonajes();
+    const candidatosPorChar = {};
+    for(const P of todos){
+      const lista = [];
+      for(let r=0;r<T;r++) for(let c=0;c<T;c++){
+        if(this.tableroReal[r][c] === 'X') continue;
+        lista.push({r,c});
+      }
+      candidatosPorChar[P.id] = lista;
+    }
+
+    const restriccionesPorChar = {};
+    for(const P of todos) restriccionesPorChar[P.id] = 0;
+    for(const p of constraints){
+      if(p.a) restriccionesPorChar[p.a] = (restriccionesPorChar[p.a]||0) + 1;
+      if(p.b) restriccionesPorChar[p.b] = (restriccionesPorChar[p.b]||0) + 1;
+    }
+    const sospOrdenados = [...this.sospechosos].sort((a,b) => (restriccionesPorChar[b.id]||0) - (restriccionesPorChar[a.id]||0));
+    const orden = ['V', ...sospOrdenados.map(s=>s.id)];
+
+    const filasUsadas = new Set();
+    const colsUsadas = new Set();
+    const asign = { V: {r:this.victima.r, c:this.victima.c} };
+    filasUsadas.add(this.victima.r);
+    colsUsadas.add(this.victima.c);
+
+    let soluciones = 0;
+    let pasos = 0;
+    let abortado = false;
+
+    const dfs = (idx) => {
+      if(abortado || soluciones >= limite) return;
+      if(++pasos > maxPasos){ abortado = true; return; }
+      if(idx === orden.length){ soluciones++; return; }
+      const id = orden[idx];
+      const cands = candidatosPorChar[id];
+      for(const c of cands){
+        if(filasUsadas.has(c.r) || colsUsadas.has(c.c)) continue;
+        asign[id] = c;
+        let ok = true;
+        for(const p of constraints){
+          if(p.a !== id && p.b !== id) continue;
+          const v = p.check(asign);
+          if(v === false){ ok = false; break; }
+        }
+        if(ok){
+          filasUsadas.add(c.r); colsUsadas.add(c.c);
+          dfs(idx + 1);
+          filasUsadas.delete(c.r); colsUsadas.delete(c.c);
+        }
+        delete asign[id];
+        if(abortado || soluciones >= limite) return;
+      }
+    };
+
+    dfs(1);
+    if(abortado) return limite;
+    return soluciones;
+  }
+}
+
+let engine = null;
+
+function showToast(msg, tipo=""){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + tipo;
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => { t.className = 'toast'; }, 2600);
+}
+
+function renderTablero(){
+  const wrap = document.getElementById('tablero');
+  wrap.innerHTML = '';
+  const T = engine.tamano;
+  const maxBoard = Math.min(640, window.innerWidth * 0.62, window.innerHeight * 0.85);
+  const cell = Math.max(26, Math.floor(maxBoard / T));
+  wrap.style.gridTemplateColumns = `repeat(${T}, ${cell}px)`;
+
+  for(let r=0; r<T; r++){
+    for(let c=0; c<T; c++){
+      const div = document.createElement('div');
+      div.className = 'celda';
+      div.style.width = cell + 'px';
+      div.style.height = cell + 'px';
+      const hab = engine.habitaciones[r][c];
+      div.style.background = PALETA_HAB[(hab-1) % PALETA_HAB.length];
+      div.style.borderTop = (r===0   || engine.habitaciones[r-1][c] !== hab) ? '3px solid var(--ink)' : '1px solid rgba(43,24,16,0.18)';
+      div.style.borderBottom = (r===T-1 || engine.habitaciones[r+1][c] !== hab) ? '3px solid var(--ink)' : '1px solid rgba(43,24,16,0.18)';
+      div.style.borderLeft = (c===0   || engine.habitaciones[r][c-1] !== hab) ? '3px solid var(--ink)' : '1px solid rgba(43,24,16,0.18)';
+      div.style.borderRight = (c===T-1 || engine.habitaciones[r][c+1] !== hab) ? '3px solid var(--ink)' : '1px solid rgba(43,24,16,0.18)';
+      div.dataset.r = r; div.dataset.c = c;
+
+      const real = engine.tableroReal[r][c];
+      if(real === 'X'){
+        div.classList.add('obstaculo');
+      } else if(r === engine.victima.r && c === engine.victima.c){
+        div.classList.add('victima-cell');
+        const star = document.createElement('span');
+        star.className = 'pieza-victima';
+        star.textContent = '★';
+        star.title = 'Víctima: ' + engine.victima.nombre;
+        div.appendChild(star);
+      } else {
+        const placed = engine.tableroJugador[r][c];
+        if(placed){
+          const sp = engine.sospechosos.find(s => s.id === placed);
+          const inner = document.createElement('div');
+          inner.className = 'pieza-sospechoso';
+          inner.textContent = sp.id;
+          inner.title = sp.nombre;
+          div.appendChild(inner);
+        }
+      }
+
+      if(real !== 'X' && !(r === engine.victima.r && c === engine.victima.c)){
+        div.addEventListener('dragover', e => { e.preventDefault(); div.classList.add('hover'); });
+        div.addEventListener('dragleave', () => div.classList.remove('hover'));
+        div.addEventListener('drop', e => {
+          e.preventDefault();
+          div.classList.remove('hover');
+          const id = e.dataTransfer.getData('text/plain');
+          if(id) colocarSospechoso(id, r, c);
+        });
+        div.addEventListener('dblclick', () => {
+          if(engine.tableroJugador[r][c]){
+            engine.tableroJugador[r][c] = null;
+            renderTodo();
+          }
+        });
+        div.addEventListener('click', () => {
+          if(window.__pickedChip){
+            colocarSospechoso(window.__pickedChip, r, c);
+            window.__pickedChip = null;
+            document.querySelectorAll('.chip.activo').forEach(el => el.classList.remove('activo'));
+          }
+        });
+      }
+
+      wrap.appendChild(div);
+    }
+  }
+}
+
+function colocarSospechoso(id, r, c){
+  if(engine.tableroReal[r][c] === 'X') return;
+  if(r === engine.victima.r && c === engine.victima.c) return;
+  const T = engine.tamano;
+  for(let i=0;i<T;i++) for(let j=0;j<T;j++)
+    if(engine.tableroJugador[i][j] === id) engine.tableroJugador[i][j] = null;
+  engine.tableroJugador[r][c] = id;
+  renderTodo();
+}
+
+function renderSospechosos(){
+  const cont = document.getElementById('sospechosos');
+  cont.innerHTML = '';
+  const vchip = document.createElement('div');
+  vchip.className = 'chip victima';
+  vchip.textContent = '★ ' + engine.victima.nombre + ' (víctima)';
+  cont.appendChild(vchip);
+
+  for(const s of engine.sospechosos){
+    const chip = document.createElement('div');
+    chip.className = 'chip';
+    chip.textContent = s.id + ' · ' + s.nombre;
+    chip.draggable = true;
+    let colocado = false;
+    for(let r=0;r<engine.tamano && !colocado;r++)
+      for(let c=0;c<engine.tamano && !colocado;c++)
+        if(engine.tableroJugador[r][c] === s.id) colocado = true;
+    if(colocado) chip.classList.add('colocado');
+    chip.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', s.id); });
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('.chip.activo').forEach(el => el.classList.remove('activo'));
+      chip.classList.add('activo');
+      window.__pickedChip = s.id;
+    });
+    cont.appendChild(chip);
+  }
+}
+
+function renderPistas(){
+  const ol = document.getElementById('pistas');
+  ol.innerHTML = '';
+  engine.pistas.forEach(p => {
+    const li = document.createElement('li');
+    li.textContent = p.texto;
+    ol.appendChild(li);
+  });
+}
+
+function renderTodo(){
+  renderTablero();
+  renderSospechosos();
+  renderPistas();
+}
+
+function comprobarTablero(){
+  const T = engine.tamano;
+  const asign = { V: {r:engine.victima.r, c:engine.victima.c} };
+  let faltan = 0;
+  for(const s of engine.sospechosos){
+    let pos = null;
+    for(let r=0;r<T && !pos;r++) for(let c=0;c<T && !pos;c++)
+      if(engine.tableroJugador[r][c] === s.id) pos = {r,c};
+    if(pos) asign[s.id] = pos;
+    else faltan++;
+  }
+  if(faltan > 0){
+    showToast(`Faltan ${faltan} sospechoso(s) por colocar.`, 'error');
+    return;
+  }
+  const filas = new Set(), cols = new Set();
+  for(const id in asign){
+    const p = asign[id];
+    if(filas.has(p.r)){ showToast('Hay dos personajes en la misma fila.', 'error'); return; }
+    if(cols.has(p.c)){ showToast('Hay dos personajes en la misma columna.', 'error'); return; }
+    filas.add(p.r); cols.add(p.c);
+  }
+  for(const p of engine.pistas){
+    if(p.check(asign) === false){
+      showToast('Una pista no se cumple: «' + p.texto + '»', 'error');
+      return;
+    }
+  }
+  const habV = engine.habitaciones[engine.victima.r][engine.victima.c];
+  let asesino = null;
+  for(const s of engine.sospechosos){
+    const p = asign[s.id];
+    if(engine.habitaciones[p.r][p.c] === habV){ asesino = s; break; }
+  }
+  if(!asesino){
+    showToast('Tu solución cumple las pistas pero nadie comparte habitación con la víctima.', 'error');
+    return;
+  }
+  const correcto = asesino.id === engine.asesinoId;
+  document.getElementById('modalTitulo').textContent = correcto ? '¡Caso resuelto!' : 'Acusación errónea';
+  document.getElementById('modalCuerpo').innerHTML = correcto
+    ? `Has demostrado que <b>${asesino.nombre}</b> (${asesino.id}) estaba en la misma habitación que <b>${engine.victima.nombre}</b>.<br><br>Caso cerrado, detective.`
+    : `Acusaste a <b>${asesino.nombre}</b>, pero el verdadero asesino era <b>${engine.sospechosos.find(s=>s.id===engine.asesinoId).nombre}</b>. Revisa las pistas.`;
+  document.getElementById('modal').classList.add('show');
+}
+
+function nuevoCaso(){
+  const dif = document.getElementById('dificultad').value;
+  showToast('Generando caso...', '');
+  setTimeout(() => {
+    const t0 = performance.now();
+    engine = new MurdokuEngine(dif);
+    const ok = engine.generar();
+    const ms = Math.round(performance.now() - t0);
+    if(!ok){
+      showToast('No se pudo generar un caso único; intenta de nuevo.', 'error');
+      return;
+    }
+    window.__murdoku = { engine };
+    renderTodo();
+    showToast(`Caso listo en ${ms} ms — ¡buena suerte, detective!`, 'victoria');
+  }, 30);
+}
+
+function limpiarTablero(){
+  const T = engine.tamano;
+  for(let r=0;r<T;r++) for(let c=0;c<T;c++) engine.tableroJugador[r][c] = null;
+  renderTodo();
+}
+
+function rendirse(){
+  const T = engine.tamano;
+  for(let r=0;r<T;r++) for(let c=0;c<T;c++){
+    const v = engine.tableroReal[r][c];
+    if(v && v !== 'X' && v !== 'V') engine.tableroJugador[r][c] = v;
+    else if(!v) engine.tableroJugador[r][c] = null;
+  }
+  renderTodo();
+  const asesino = engine.sospechosos.find(s => s.id === engine.asesinoId);
+  showToast('Solución revelada. El asesino era ' + asesino.nombre + '.', 'error');
+}
+
+document.getElementById('nuevo').addEventListener('click', nuevoCaso);
+document.getElementById('validar').addEventListener('click', comprobarTablero);
+document.getElementById('limpiar').addEventListener('click', limpiarTablero);
+document.getElementById('revelar').addEventListener('click', rendirse);
+document.getElementById('modalCerrar').addEventListener('click', () => document.getElementById('modal').classList.remove('show'));
+window.addEventListener('resize', () => { if(engine) renderTablero(); });
+
+nuevoCaso();
+</script>
+</body>
+</html>
