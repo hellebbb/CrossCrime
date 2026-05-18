@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>MURDOKU — Cluedo × Sudoku</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <h1>MURDOKU</h1>
+    <div class="tagline">Cluedo × Sudoku — encuentra al asesino por pura deducción</div>
+  </header>
+
+  <div class="controles">
+    <label>
+      Dificultad:
+      <select id="dificultad">
+        <option value="muy_facil">Muy fácil (6×6, 4 sosp.)</option>
+        <option value="facil" selected>Fácil (8×8, 6 sosp.)</option>
+        <option value="moderado">Moderado (10×10, 9 sosp.)</option>
+        <option value="dificil">Difícil (12×12, 11 sosp.)</option>
+        <option value="muy_dificil">Muy difícil (16×16, 15 sosp.)</option>
+      </select>
+    </label>
+    <button id="nuevo" class="primary">Nuevo caso</button>
+    <button id="validar">Validar caso</button>
+    <button id="limpiar">Limpiar tablero</button>
+    <button id="revelar">Rendirse</button>
+  </div>
+
+  <div class="layout">
+    <div class="tablero-wrap">
+      <div id="tablero" role="grid" aria-label="Tablero de Murdoku"></div>
+    </div>
+    <aside class="panel">
+      <div class="seccion">
+        <h2>Fichas</h2>
+        <p class="hint">Toca una ficha para activarla. Luego: <b>clic</b> en una celda = anota candidato. <b>Mantén presionado</b> (≈0.5 s) = fija la ficha. <b>Doble clic</b> sobre ficha fija = retirar.</p>
+        <div class="sospechosos" id="sospechosos"></div>
+      </div>
+      <div class="seccion">
+        <h2>Pistas del caso</h2>
+        <ol class="pistas" id="pistas"></ol>
+      </div>
+      <div class="seccion">
+        <h2>Reglas</h2>
+        <p class="leyenda">
+          Dos personas no pueden compartir fila ni columna. La <b>víctima</b> está oculta — debes deducir dónde estaba. Cuando coloques a todos, validamos: <b>el asesino siempre está en la misma habitación que la víctima.</b>
+        </p>
+      </div>
+    </aside>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <div class="spinner" id="spinner">
+    <div class="spinner-box">
+      <div class="spinner-anim"></div>
+      <div class="spinner-msg" id="spinnerMsg">Generando caso...</div>
+    </div>
+  </div>
+
+  <div class="modal" id="modal">
+    <div class="modal-content">
+      <h2 id="modalTitulo">¡Caso resuelto!</h2>
+      <p id="modalCuerpo"></p>
+      <button id="modalCerrar">Cerrar</button>
+    </div>
+  </div>
+
+  <script type="module" src="engine.js"></script>
+</body>
+</html>
