@@ -56,11 +56,11 @@ class MurdokuEngine {
   }
 
   maxPasosSolver() {
-    return this.tamano <= 6  ? 80_000
-         : this.tamano <= 8  ? 200_000
-         : this.tamano <= 10 ? 500_000
-         : this.tamano <= 12 ? 1_200_000
-         :                     3_000_000;
+    return this.tamano <= 6  ? 200_000
+         : this.tamano <= 8  ? 600_000
+         : this.tamano <= 10 ? 1_500_000
+         : this.tamano <= 12 ? 4_000_000
+         :                     10_000_000;
   }
 
   async generar(onProgress) {
@@ -262,36 +262,75 @@ class MurdokuEngine {
   async crearPistasUnaPorPersona() {
     const todos = this.todosPersonajes();
     const porChar = this.generarPistasCandidatasPorChar();
-    for (const P of todos) if (porChar[P.id].length === 0) return false;
-
+    for (const P of todos) {
+      if (porChar[P.id].length === 0) return false;
+      porChar[P.id].sort((a, b) => b.peso - a.peso);
+    }
     const maxPasos = this.maxPasosSolver();
-    const intentos = this.tamano <= 8 ? 240 : this.tamano <= 12 ? 160 : 100;
 
-    for (let i = 0; i < intentos; i++) {
-      const elegidas = todos.map(P => pickWeighted(porChar[P.id]));
-      const conteo = this.contarSoluciones(elegidas, 2, maxPasos);
-      if (conteo === 1) {
-        // Ordenar pistas por orden de personaje (víctima primero)
+    // Construcción GREEDY: para cada personaje, elige (entre sus 6 mejores
+    // pistas) la que minimiza el conteo de soluciones al añadirla al set
+    // acumulado. Repite con varias semillas de orden si no converge.
+    const semillas = this.tamano <= 8 ? 8 : this.tamano <= 12 ? 6 : 4;
+    for (let semilla = 0; semilla < semillas; semilla++) {
+      const ordenChars = [...todos];
+      // Primera semilla = peso descendente; siguientes = aleatorias
+      if (semilla === 0) {
+        ordenChars.sort((a, b) => porChar[b.id][0].peso - porChar[a.id][0].peso);
+      } else {
+        shuffle(ordenChars);
+      }
+      const elegidas = [];
+      const topN = this.tamano <= 8 ? 6 : 4;
+      let abortar = false;
+      for (const P of ordenChars) {
+        const candidatas = porChar[P.id].slice(0, Math.min(topN, porChar[P.id].length));
+        let mejorPista = null;
+        let mejorConteo = Infinity;
+        for (const pista of candidatas) {
+          const probe = [...elegidas, pista];
+          const conteo = this.contarSoluciones(probe, 2, maxPasos);
+          if (conteo < mejorConteo) {
+            mejorConteo = conteo;
+            mejorPista = pista;
+            if (conteo <= 1) break;
+          }
+        }
+        if (!mejorPista) { abortar = true; break; }
+        elegidas.push(mejorPista);
+        if (mejorConteo === 0) { abortar = true; break; }
+        await sleep(0);
+      }
+      if (abortar) continue;
+      const final = this.contarSoluciones(elegidas, 2, maxPasos);
+      if (final === 1) {
         const ordenId = todos.map(P => P.id);
         elegidas.sort((a, b) => ordenId.indexOf(a.a) - ordenId.indexOf(b.a));
         this.pistas = elegidas;
         return true;
       }
-      if (i % 12 === 11) await sleep(0);
+      await sleep(0);
     }
     return false;
   }
 
-  // === 5. Solver (backtracking con poda) ===
+  // === 5. Solver (backtracking optimizado con bitmasks) ===
   contarSoluciones(constraints, limite = 2, maxPasos = 500_000) {
     const T = this.tamano;
     const todos = this.todosPersonajes();
+    const ids = todos.map(P => P.id);
 
-    // Pre-filtro unario por personaje: descartar celdas que violan pistas unarias
+    // Agrupar restricciones por personaje referido (a o b)
+    const restPorChar = {};
     const unariasPorChar = {};
-    for (const P of todos) unariasPorChar[P.id] = [];
-    for (const c of constraints) if (c.a && !c.b) unariasPorChar[c.a].push(c);
+    for (const id of ids) { restPorChar[id] = []; unariasPorChar[id] = []; }
+    for (const c of constraints) {
+      if (c.a) restPorChar[c.a].push(c);
+      if (c.b && c.b !== c.a) restPorChar[c.b].push(c);
+      if (c.a && !c.b) unariasPorChar[c.a].push(c);
+    }
 
+    // Pre-filtrar candidatas por personaje aplicando restricciones unarias
     const candidatosPorChar = {};
     for (const P of todos) {
       const lista = [];
@@ -304,30 +343,27 @@ class MurdokuEngine {
           for (const u of unarias) { if (u.check(fake) === false) { ok = false; break; } }
           if (!ok) continue;
         }
-        lista.push({ r, c });
+        lista.push({ r, c, rBit: 1 << r, cBit: 1 << c });
       }
       if (lista.length === 0) return 0;
       candidatosPorChar[P.id] = lista;
     }
 
-    // Orden DFS: chars con más constraints primero (más poda temprana)
-    const refCount = {};
-    for (const P of todos) refCount[P.id] = 0;
-    for (const p of constraints) { if (p.a) refCount[p.a]++; if (p.b) refCount[p.b]++; }
-    const orden = [...todos].sort((a, b) => {
-      const dr = (refCount[b.id] || 0) - (refCount[a.id] || 0);
-      if (dr !== 0) return dr;
-      return candidatosPorChar[a.id].length - candidatosPorChar[b.id].length;
-    }).map(P => P.id);
+    // Orden DFS: más restringidos primero
+    const orden = [...todos]
+      .sort((a, b) => {
+        const dr = restPorChar[b.id].length - restPorChar[a.id].length;
+        if (dr !== 0) return dr;
+        return candidatosPorChar[a.id].length - candidatosPorChar[b.id].length;
+      })
+      .map(P => P.id);
 
-    const filasUsadas = new Set();
-    const colsUsadas = new Set();
+    let filasUsadas = 0;
+    let colsUsadas = 0;
     const asign = {};
     let soluciones = 0;
     let pasos = 0;
     let abortado = false;
-
-    const constraintsRef = constraints; // bound
 
     const dfs = idx => {
       if (abortado || soluciones >= limite) return;
@@ -335,27 +371,30 @@ class MurdokuEngine {
       if (idx === orden.length) { soluciones++; return; }
       const id = orden[idx];
       const cands = candidatosPorChar[id];
-      for (const cell of cands) {
-        if (filasUsadas.has(cell.r) || colsUsadas.has(cell.c)) continue;
+      const restr = restPorChar[id];
+      for (let i = 0; i < cands.length; i++) {
+        const cell = cands[i];
+        if ((filasUsadas & cell.rBit) !== 0 || (colsUsadas & cell.cBit) !== 0) continue;
         asign[id] = cell;
         let ok = true;
-        for (const p of constraintsRef) {
-          if (p.a !== id && p.b !== id) continue;
-          const v = p.check(asign);
+        for (let j = 0; j < restr.length; j++) {
+          const v = restr[j].check(asign);
           if (v === false) { ok = false; break; }
         }
         if (ok) {
-          filasUsadas.add(cell.r); colsUsadas.add(cell.c);
+          filasUsadas |= cell.rBit;
+          colsUsadas |= cell.cBit;
           dfs(idx + 1);
-          filasUsadas.delete(cell.r); colsUsadas.delete(cell.c);
+          filasUsadas &= ~cell.rBit;
+          colsUsadas &= ~cell.cBit;
         }
-        delete asign[id];
+        asign[id] = undefined;
         if (abortado || soluciones >= limite) return;
       }
     };
 
     dfs(0);
-    if (abortado) return limite; // ambiguo por timeout
+    if (abortado) return Math.max(soluciones, limite);
     return soluciones;
   }
 }
