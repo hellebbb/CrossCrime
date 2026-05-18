@@ -1,5 +1,9 @@
 // engine.js — MURDOKU: Cluedo × Sudoku
-// Motor de generación + control de UI. Cargado como módulo: scope encapsulado.
+// Motor de generación + control de UI. Envuelto en IIFE para encapsular scope
+// sin depender de soporte de ES modules en el entorno de carga.
+
+(function () {
+'use strict';
 
 const CONFIG_DIFICULTAD = {
   muy_facil:   { tamano: 6,  sospechosos: 4,  habitaciones: 3, obstaculos: 4  },
@@ -643,3 +647,5 @@ if (document.readyState === 'loading') {
 } else {
   init();
 }
+
+})();
