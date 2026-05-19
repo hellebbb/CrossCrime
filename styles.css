@@ -132,6 +132,13 @@ h1 {
   overflow: hidden;
 }
 
+.mueble-icon {
+  position: absolute; bottom: 2px; right: 4px;
+  font-size: 14px; line-height: 1;
+  color: rgba(43,24,16,0.55);
+  pointer-events: none;
+}
+
 .check-label {
   display: inline-flex; align-items: center; gap: 6px;
   background: var(--paper); color: var(--ink);

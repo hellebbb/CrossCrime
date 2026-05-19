@@ -43,21 +43,35 @@ const NOMBRES_HABITACION = [
   "el invernadero","la sala de billar","el observatorio","la trastienda",
 ];
 
-// Obstáculos con nombre — bloquean paso y dan referencia espacial en pistas
+// OBSTÁCULOS — bloquean paso, ningún personaje puede ocupar su celda
 const NOMBRES_OBSTACULOS = [
-  "una mesa","un librero","un sofá","un piano","una chimenea",
-  "un armario","una estatua","un escritorio","un cofre","una mesa de billar",
-  "una vitrina","un sillón","una repisa","un baúl","un perchero",
-  "un reloj de péndulo","una jaula vacía","un maniquí",
+  "una estantería","un librero","un piano","una chimenea","un armario",
+  "una vitrina","un escritorio","una estatua","un reloj de péndulo",
+  "un perchero","una jaula vacía","un maniquí","un cofre","un baúl",
+  "una mesa de billar","una pecera de cristal","un samovar grande",
+  "una armadura","un atril","un globo terráqueo",
 ];
 
-// Objetos interactuables — decoran las habitaciones, aparecen en pistas
-const OBJETOS_DECORATIVOS = [
-  "una alfombra persa","una lámpara antigua","un candelabro","un espejo ovalado",
-  "un cuadro al óleo","un jarrón con flores","una vela encendida","un samovar",
-  "una pintura desvanecida","una pecera","un tapiz bordado","un atril",
-  "un globo terráqueo","un fonógrafo",
+// USABLES — muebles donde un personaje SÍ puede estar encima (silla, cama, etc.)
+const NOMBRES_USABLES = [
+  "una silla","un sillón","una cama","un banco","una mesa de café",
+  "un puff","una hamaca","un taburete","una banca","una butaca",
+  "una otomana","un diván","una mecedora","una chaise longue",
+  "un sofá","una banqueta","un asiento de ventana","un cojín grande",
+  "una alfombra mullida","una poltrona",
 ];
+
+// Verbo según el tipo de mueble (gender-neutral: pasado simple)
+function verboMueble(m) {
+  if (/cama|hamaca|otomana|diván|chaise/.test(m)) return 'se recostó en';
+  if (/mesa|cojín|alfombra/.test(m)) return 'estaba sobre';
+  return 'se sentó en';
+}
+function iconoMueble(m) {
+  if (/cama|hamaca|otomana|diván|chaise/.test(m)) return '·';
+  if (/mesa|cojín|alfombra/.test(m)) return '▪';
+  return '◗';
+}
 
 const PALETA_HAB = [
   "#fde4cf","#e4f1fe","#e9f5db","#fff1c1","#fbe5e1",
@@ -138,8 +152,8 @@ class MurdokuEngine {
     this.notas = Array.from({ length: T }, () => Array.from({ length: T }, () => new Set()));
     this.habitaciones = Array.from({ length: T }, () => Array(T).fill(0));
     this.nombreHabitacion = {};       // {idHab: "el salón"}
-    this.nombreObstaculo = {};        // {"r,c": "una mesa"}
-    this.objetoHabitacion = {};       // {idHab: "una alfombra persa"}
+    this.nombreObstaculo = {};        // {"r,c": "una estantería"} — bloquea celda
+    this.mueble = {};                 // {"r,c": "una silla"} — usable, personajes encima sí
     this.sospechosos = [];
     this.victima = { id: 'V', nombre: pick(NOMBRES_VICTIMA), r: -1, c: -1 };
     this.asesinoId = null;
@@ -161,6 +175,7 @@ class MurdokuEngine {
       this.generarHabitaciones();
       if (!this.generarSolucionValida()) { await sleep(0); continue; }
       this.colocarObstaculos();
+      this.colocarMuebles();
 
       for (let ronda = 0; ronda < 6; ronda++) {
         onProgress?.(`Buscando pistas únicas (ronda ${ronda + 1})...`);
@@ -217,12 +232,29 @@ class MurdokuEngine {
       if (grid[r][c] === 0) grid[r][c] = 1;
     }
 
-    // Asignar nombre temático a cada habitación + un objeto decorativo único
+    // Nombre temático único por habitación
     const habNombresShuffled = shuffle([...NOMBRES_HABITACION]);
-    const objShuffled = shuffle([...OBJETOS_DECORATIVOS]);
     for (let id = 1; id <= N; id++) {
       this.nombreHabitacion[id] = habNombresShuffled[(id - 1) % habNombresShuffled.length];
-      this.objetoHabitacion[id] = objShuffled[(id - 1) % objShuffled.length];
+    }
+  }
+
+  // Coloca muebles USABLES en celdas libres (incluso donde haya personajes).
+  // Cada nombre se usa una sola vez por partida para que las pistas sean inequívocas.
+  colocarMuebles() {
+    const T = this.tamano;
+    const cuantos = Math.max(2, Math.floor(this.config.obstaculos * 0.7));
+    const nombresShuffled = shuffle([...NOMBRES_USABLES]);
+    const candidatas = [];
+    for (let r = 0; r < T; r++) for (let c = 0; c < T; c++) {
+      if (this.tableroReal[r][c] !== 'X') candidatas.push({ r, c });
+    }
+    shuffle(candidatas);
+    let n = 0;
+    for (const { r, c } of candidatas) {
+      if (n >= cuantos || n >= nombresShuffled.length) break;
+      this.mueble[r + ',' + c] = nombresShuffled[n];
+      n++;
     }
   }
 
@@ -244,14 +276,15 @@ class MurdokuEngine {
           if (i === vi) continue;
           if (this.habitaciones[posiciones[i].r][posiciones[i].c] === habV) coMates.push(i);
         }
-        if (coMates.length === 0) continue;
+        // REGLA: víctima a solas con el asesino — exactamente 1 acompañante
+        if (coMates.length !== 1) continue;
         // Aplicar la solución
         this.sospechosos = [];
         for (let r = 0; r < T; r++) for (let c = 0; c < T; c++) this.tableroReal[r][c] = null;
         this.victima.r = posiciones[vi].r;
         this.victima.c = posiciones[vi].c;
         this.tableroReal[this.victima.r][this.victima.c] = 'V';
-        const idxAses = pick(coMates);
+        const idxAses = coMates[0];
         let nIdx = 0;
         for (let i = 0; i < K; i++) {
           if (i === vi) continue;
@@ -345,7 +378,7 @@ class MurdokuEngine {
       if (P.c === 0)   porChar[P.id].push({ texto: PHRASE_PARED.oeste(P), check: s => { const p = s[P.id]; if (!p) return null; return p.c === 0; },   a: P.id, peso: 5 });
       if (P.c === T-1) porChar[P.id].push({ texto: PHRASE_PARED.este(P),  check: s => { const p = s[P.id]; if (!p) return null; return p.c === T-1; }, a: P.id, peso: 5 });
 
-      // Obstáculo adyacente (con nombre concreto del mueble)
+      // Obstáculo adyacente (mueble que bloquea, ej. estantería)
       const dirs = [["norte",-1,0],["sur",1,0],["oeste",0,-1],["este",0,1]];
       for (const [nd, dr, dc] of dirs) {
         const nr = P.r + dr, nc = P.c + dc;
@@ -364,25 +397,56 @@ class MurdokuEngine {
         }
       }
 
+      // ENCIMA de un mueble usable (único en el tablero → pinpoint exacto)
+      const muebPropio = this.mueble[P.r + ',' + P.c];
+      if (muebPropio) {
+        const cuantosIguales = Object.values(this.mueble).filter(m => m === muebPropio).length;
+        if (cuantosIguales === 1) {
+          const verbo = verboMueble(muebPropio);
+          const cellRef = { r: P.r, c: P.c };
+          porChar[P.id].push({
+            texto: `${P.nombre} ${verbo} ${muebPropio}.`,
+            check: s => { const p = s[P.id]; if (!p) return null; return p.r === cellRef.r && p.c === cellRef.c; },
+            a: P.id, peso: 9,
+          });
+        }
+      }
+
+      // Mueble usable adyacente (no bloquea pero da referencia)
+      for (const [nd, dr, dc] of dirs) {
+        const nr = P.r + dr, nc = P.c + dc;
+        if (nr < 0 || nr >= T || nc < 0 || nc >= T) continue;
+        const muebAdj = this.mueble[nr + ',' + nc];
+        if (!muebAdj) continue;
+        const cuantosIguales = Object.values(this.mueble).filter(m => m === muebAdj).length;
+        if (cuantosIguales !== 1) continue;
+        const cellAdj = { r: nr, c: nc };
+        porChar[P.id].push({
+          texto: `${P.nombre} tenía ${muebAdj} al ${nd}.`,
+          check: s => {
+            const p = s[P.id]; if (!p) return null;
+            return Math.abs(p.r - cellAdj.r) + Math.abs(p.c - cellAdj.c) === 1
+                && (p.r === cellAdj.r || p.c === cellAdj.c);
+          },
+          a: P.id, peso: 6,
+        });
+      }
+
       // Relaciones binarias con cada otro personaje
+      // (sin pistas de distancia — son ambiguas)
+      // (sin pistas que delaten "X compartía habitación con la víctima" — eso revela al asesino)
       for (const Q of todos) {
         if (Q.id === P.id) continue;
-        const dist = Math.abs(P.r - Q.r) + Math.abs(P.c - Q.c);
         const habQ = this.habitaciones[Q.r][Q.c];
+        const involucraVictima = (P.id === 'V' || Q.id === 'V');
 
-        porChar[P.id].push({
-          texto: pick(PHRASE_DIST)(P, Q, dist),
-          check: s => { const a = s[P.id], b = s[Q.id]; if (!a || !b) return null; return Math.abs(a.r - b.r) + Math.abs(a.c - b.c) === dist; },
-          a: P.id, b: Q.id, peso: 2,
-        });
-
-        if (habP === habQ) {
+        if (habP === habQ && !involucraVictima) {
           porChar[P.id].push({
             texto: pick(PHRASE_HAB_PAR)(P, Q),
             check: s => { const a = s[P.id], b = s[Q.id]; if (!a || !b) return null; return this.habitaciones[a.r][a.c] === this.habitaciones[b.r][b.c]; },
             a: P.id, b: Q.id, peso: 3,
           });
-        } else {
+        } else if (habP !== habQ && !involucraVictima) {
           porChar[P.id].push({
             texto: pick(PHRASE_NOHAB_PAR)(P, Q),
             check: s => { const a = s[P.id], b = s[Q.id]; if (!a || !b) return null; return this.habitaciones[a.r][a.c] !== this.habitaciones[b.r][b.c]; },
@@ -636,6 +700,15 @@ function renderTablero() {
           lbl.textContent = eng.nombreHabitacion[hab] || '';
           div.appendChild(lbl);
         }
+        // Mueble usable (silla, cama, etc.) — ícono pequeño en esquina
+        const mueb = eng.mueble[r + ',' + c];
+        if (mueb) {
+          const mIcon = document.createElement('div');
+          mIcon.className = 'mueble-icon';
+          mIcon.textContent = iconoMueble(mueb);
+          mIcon.title = mueb;
+          div.appendChild(mIcon);
+        }
 
         const placed = eng.tableroJugador[r][c];
         if (placed === 'V') {
@@ -702,9 +775,19 @@ function attachCellHandlers(div, r, c) {
   div.addEventListener('dblclick', () => onCellDblClick(r, c));
 }
 
+function filaOColumnaBloqueadas(eng, r, c) {
+  const T = eng.tamano;
+  for (let i = 0; i < T; i++) {
+    if (i !== c && eng.tableroJugador[r][i]) return true;
+    if (i !== r && eng.tableroJugador[i][c]) return true;
+  }
+  return false;
+}
+
 function onCellClick(r, c) {
   const eng = state.engine;
   if (eng.tableroJugador[r][c]) return; // celda fija → solo dblclick para retirar
+  if (filaOColumnaBloqueadas(eng, r, c)) return; // fila o columna ya tiene pieza
   if (!state.fichaActiva) { showToast('Selecciona primero una ficha en el panel.', ''); return; }
   const notas = eng.notas[r][c];
   if (notas.has(state.fichaActiva)) notas.delete(state.fichaActiva);
@@ -715,13 +798,24 @@ function onCellClick(r, c) {
 function onCellLongPress(r, c) {
   const eng = state.engine;
   if (eng.tableroJugador[r][c]) return;
+  if (filaOColumnaBloqueadas(eng, r, c)) {
+    showToast('Esa fila o columna ya tiene una pieza fijada.', 'error');
+    return;
+  }
   if (!state.fichaActiva) { showToast('Selecciona primero una ficha en el panel.', ''); return; }
   const id = state.fichaActiva;
-  // Retirar de su posición previa
   const T = eng.tamano;
+  // Retirar de su posición previa
   for (let i = 0; i < T; i++) for (let j = 0; j < T; j++) if (eng.tableroJugador[i][j] === id) eng.tableroJugador[i][j] = null;
+  // Borrar TODAS las notas de este personaje en cualquier celda
+  for (let i = 0; i < T; i++) for (let j = 0; j < T; j++) eng.notas[i][j].delete(id);
+  // Fijar
   eng.tableroJugador[r][c] = id;
-  eng.notas[r][c].clear();
+  // Limpiar notas en toda la fila y columna del destino
+  for (let i = 0; i < T; i++) {
+    eng.notas[r][i].clear();
+    eng.notas[i][c].clear();
+  }
   render();
 }
 
