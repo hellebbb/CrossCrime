@@ -68,9 +68,14 @@ function verboMueble(m) {
   return 'se sentó en';
 }
 function iconoMueble(m) {
-  if (/cama|hamaca|otomana|diván|chaise/.test(m)) return '·';
-  if (/mesa|cojín|alfombra/.test(m)) return '▪';
-  return '◗';
+  if (/cama/.test(m))                    return '🛏';
+  if (/hamaca/.test(m))                  return '⌒';
+  if (/otomana|diván|chaise/.test(m))    return '🛋';
+  if (/sofá/.test(m))                    return '🛋';
+  if (/alfombra/.test(m))                return '▦';
+  if (/mesa/.test(m))                    return '▭';
+  if (/cojín|puff/.test(m))              return '◆';
+  return '🪑'; // sillas, sillones, butacas, taburetes, mecedoras, etc.
 }
 
 const PALETA_HAB = [
@@ -700,13 +705,14 @@ function renderTablero() {
           lbl.textContent = eng.nombreHabitacion[hab] || '';
           div.appendChild(lbl);
         }
-        // Mueble usable (silla, cama, etc.) — ícono pequeño en esquina
+        // Mueble usable (silla, cama, etc.) — ícono visible + tooltip
         const mueb = eng.mueble[r + ',' + c];
         if (mueb) {
+          div.classList.add('has-mueble');
+          div.title = mueb;
           const mIcon = document.createElement('div');
           mIcon.className = 'mueble-icon';
           mIcon.textContent = iconoMueble(mueb);
-          mIcon.title = mueb;
           div.appendChild(mIcon);
         }
 

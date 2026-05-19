@@ -133,10 +133,17 @@ h1 {
 }
 
 .mueble-icon {
-  position: absolute; bottom: 2px; right: 4px;
-  font-size: 14px; line-height: 1;
-  color: rgba(43,24,16,0.55);
+  position: absolute; bottom: 1px; right: 3px;
+  font-size: 18px; line-height: 1;
   pointer-events: none;
+  text-shadow:
+    0 0 4px rgba(255, 248, 220, 0.95),
+    0 0 2px rgba(255, 248, 220, 0.95),
+    0 1px 0 rgba(0,0,0,0.15);
+  z-index: 1;
+}
+.celda.has-mueble {
+  box-shadow: inset 0 0 0 2px rgba(201, 164, 73, 0.45);
 }
 
 .check-label {
