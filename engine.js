@@ -13,9 +13,50 @@ const CONFIG_DIFICULTAD = {
   muy_dificil: { tamano: 16, sospechosos: 15, habitaciones: 8, obstaculos: 25 },
 };
 
-const NOMBRES = [
-  "Aitor","Bea","Cira","Dante","Elena","Fran","Greta","Hugo",
-  "Iris","Jano","Kira","Lía","Mateo","Nora","Olmo",
+// Nombres por letra inicial (un personaje con id 'A' obtiene un nombre con A)
+const NOMBRES_POR_LETRA = {
+  A: ["Adeline","Ana","Aranza","Antonio","Alma","Andrea","Alejo"],
+  B: ["Braulio","Bernardo","Beatriz","Benjamín","Bianca","Bruno"],
+  C: ["Cira","Camila","Carlos","Cecilia","Catalina","Cristóbal"],
+  D: ["Dante","Diana","Damián","Daniela","Diego","Dolores"],
+  E: ["Elena","Eduardo","Emma","Esteban","Eva","Emilio"],
+  F: ["Francisca","Felipe","Frida","Fernanda","Fátima","Federico"],
+  G: ["Greta","Gabriel","Gloria","Germán","Gala","Gustavo"],
+  H: ["Hugo","Helena","Héctor","Hilda","Hannah","Horacio"],
+  I: ["Iris","Ignacio","Irene","Iván","Inés","Ismael"],
+  J: ["Jano","Julia","Joaquín","Jimena","Javier","Juana"],
+  K: ["Kira","Karla","Kevin","Karen","Kai","Kira"],
+  L: ["Lía","Leo","Lucía","Luis","Lola","León"],
+  M: ["Mateo","Mía","Marcos","Marina","Marta","Manuel"],
+  N: ["Nora","Nicolás","Natalia","Néstor","Noa","Nadia"],
+  O: ["Olmo","Olivia","Octavio","Olga","Omar","Ofelia"],
+};
+
+const NOMBRES_VICTIMA = [
+  "Virgilio","Valentina","Víctor","Vera","Valeria","Vicente","Violeta",
+];
+
+// Habitaciones temáticas: cada partida elige N nombres distintos
+const NOMBRES_HABITACION = [
+  "el salón","la biblioteca","el comedor","el estudio","la galería",
+  "el vestíbulo","la sala de música","el jardín de invierno","la cocina",
+  "el invernadero","la sala de billar","el observatorio","la trastienda",
+];
+
+// Obstáculos con nombre — bloquean paso y dan referencia espacial en pistas
+const NOMBRES_OBSTACULOS = [
+  "una mesa","un librero","un sofá","un piano","una chimenea",
+  "un armario","una estatua","un escritorio","un cofre","una mesa de billar",
+  "una vitrina","un sillón","una repisa","un baúl","un perchero",
+  "un reloj de péndulo","una jaula vacía","un maniquí",
+];
+
+// Objetos interactuables — decoran las habitaciones, aparecen en pistas
+const OBJETOS_DECORATIVOS = [
+  "una alfombra persa","una lámpara antigua","un candelabro","un espejo ovalado",
+  "un cuadro al óleo","un jarrón con flores","una vela encendida","un samovar",
+  "una pintura desvanecida","una pecera","un tapiz bordado","un atril",
+  "un globo terráqueo","un fonógrafo",
 ];
 
 const PALETA_HAB = [
@@ -23,10 +64,52 @@ const PALETA_HAB = [
   "#e0d7f5","#d6efe1","#fcd5ce","#ddedea","#f0e1d4",
 ];
 
-const NOMBRE_HAB = [
-  "color durazno","color cielo","color menta","color amarillo","color rosa",
-  "color violeta","color verde","color salmón","color salvia","color arena",
+// Plantillas de pistas — varias formas de decir lo mismo para que las partidas no se sientan repetitivas
+const PHRASE_FILA = [
+  P => `${P.nombre} estaba en la fila ${P.r + 1}.`,
+  P => `${P.nombre} ocupaba la fila número ${P.r + 1}.`,
+  P => `Se vio a ${P.nombre} cruzar la fila ${P.r + 1}.`,
 ];
+const PHRASE_COL = [
+  P => `${P.nombre} estaba en la columna ${P.c + 1}.`,
+  P => `${P.nombre} se mantuvo en la columna ${P.c + 1}.`,
+  P => `La columna ${P.c + 1} fue el lugar de ${P.nombre}.`,
+];
+const PHRASE_HAB = [
+  (P, sal) => `${P.nombre} se encontraba en ${sal}.`,
+  (P, sal) => `Encontramos a ${P.nombre} dentro de ${sal}.`,
+  (P, sal) => `${P.nombre} permaneció en ${sal} toda la noche.`,
+];
+const PHRASE_PARED = {
+  norte: P => [`${P.nombre} estaba pegado a la pared norte.`, `La pared norte tenía a ${P.nombre} apoyado.`][randInt(2)],
+  sur:   P => [`${P.nombre} estaba pegado a la pared sur.`,   `${P.nombre} se recargaba contra la pared sur.`][randInt(2)],
+  este:  P => [`${P.nombre} estaba pegado a la pared este.`,  `La pared este sostenía a ${P.nombre}.`][randInt(2)],
+  oeste: P => [`${P.nombre} estaba pegado a la pared oeste.`, `${P.nombre} se apoyaba en la pared oeste.`][randInt(2)],
+};
+const PHRASE_OBS = [
+  (P, obj, dir) => `${P.nombre} tenía ${obj} al ${dir}.`,
+  (P, obj, dir) => `Junto a ${P.nombre}, al ${dir}, había ${obj}.`,
+  (P, obj, dir) => `${P.nombre} alcanzaba ${obj} si miraba al ${dir}.`,
+];
+const PHRASE_DIST = [
+  (P, Q, d) => `${P.nombre} estaba a ${d} casillas de ${Q.nombre}.`,
+  (P, Q, d) => `Entre ${P.nombre} y ${Q.nombre} había ${d} casillas de distancia.`,
+  (P, Q, d) => `${P.nombre} se hallaba a ${d} pasos de ${Q.nombre}.`,
+];
+const PHRASE_HAB_PAR = [
+  (P, Q) => `${P.nombre} compartía habitación con ${Q.nombre}.`,
+  (P, Q) => `${P.nombre} y ${Q.nombre} estaban en el mismo cuarto.`,
+];
+const PHRASE_NOHAB_PAR = [
+  (P, Q) => `${P.nombre} no compartía habitación con ${Q.nombre}.`,
+  (P, Q) => `${P.nombre} y ${Q.nombre} estaban en cuartos distintos.`,
+];
+const PHRASE_DIR_PAR = {
+  norte: (P, Q) => [`${P.nombre} estaba al norte de ${Q.nombre}.`, `${P.nombre} se encontraba por encima de ${Q.nombre}.`][randInt(2)],
+  sur:   (P, Q) => [`${P.nombre} estaba al sur de ${Q.nombre}.`,   `${P.nombre} se encontraba por debajo de ${Q.nombre}.`][randInt(2)],
+  oeste: (P, Q) => [`${P.nombre} estaba al oeste de ${Q.nombre}.`, `${P.nombre} caía a la izquierda de ${Q.nombre}.`][randInt(2)],
+  este:  (P, Q) => [`${P.nombre} estaba al este de ${Q.nombre}.`,  `${P.nombre} caía a la derecha de ${Q.nombre}.`][randInt(2)],
+};
 
 const sleep = (ms = 0) => new Promise(r => setTimeout(r, ms));
 const randInt = n => Math.floor(Math.random() * n);
@@ -54,8 +137,11 @@ class MurdokuEngine {
     this.tableroJugador = Array.from({ length: T }, () => Array(T).fill(null));
     this.notas = Array.from({ length: T }, () => Array.from({ length: T }, () => new Set()));
     this.habitaciones = Array.from({ length: T }, () => Array(T).fill(0));
+    this.nombreHabitacion = {};       // {idHab: "el salón"}
+    this.nombreObstaculo = {};        // {"r,c": "una mesa"}
+    this.objetoHabitacion = {};       // {idHab: "una alfombra persa"}
     this.sospechosos = [];
-    this.victima = { id: 'V', nombre: 'Virgilio', r: -1, c: -1 };
+    this.victima = { id: 'V', nombre: pick(NOMBRES_VICTIMA), r: -1, c: -1 };
     this.asesinoId = null;
     this.pistas = [];
   }
@@ -130,6 +216,14 @@ class MurdokuEngine {
       }
       if (grid[r][c] === 0) grid[r][c] = 1;
     }
+
+    // Asignar nombre temático a cada habitación + un objeto decorativo único
+    const habNombresShuffled = shuffle([...NOMBRES_HABITACION]);
+    const objShuffled = shuffle([...OBJETOS_DECORATIVOS]);
+    for (let id = 1; id <= N; id++) {
+      this.nombreHabitacion[id] = habNombresShuffled[(id - 1) % habNombresShuffled.length];
+      this.objetoHabitacion[id] = objShuffled[(id - 1) % objShuffled.length];
+    }
   }
 
   // === 2. Solución válida (víctima + asesino en misma habitación) ===
@@ -159,11 +253,11 @@ class MurdokuEngine {
         this.tableroReal[this.victima.r][this.victima.c] = 'V';
         const idxAses = pick(coMates);
         let nIdx = 0;
-        const nombresMezcla = shuffle([...NOMBRES]);
         for (let i = 0; i < K; i++) {
           if (i === vi) continue;
           const id = String.fromCharCode(65 + nIdx);
-          const nombre = nombresMezcla[nIdx % nombresMezcla.length];
+          const nombresLetra = NOMBRES_POR_LETRA[id] || [id];
+          const nombre = pick(nombresLetra);
           const s = { id, nombre, r: posiciones[i].r, c: posiciones[i].c };
           this.sospechosos.push(s);
           this.tableroReal[s.r][s.c] = id;
@@ -190,6 +284,7 @@ class MurdokuEngine {
       const r = randInt(T), c = randInt(T);
       if (this.tableroReal[r][c] !== null) continue;
       this.tableroReal[r][c] = 'X';
+      this.nombreObstaculo[r + ',' + c] = pick(NOMBRES_OBSTACULOS);
       n++;
     }
   }
@@ -203,83 +298,102 @@ class MurdokuEngine {
     const porChar = {};
     for (const P of todos) porChar[P.id] = [];
 
+    // Helper: cuenta cuántos personajes están en una habitación dada (para "único en el salón")
+    const conteoPorHab = {};
     for (const P of todos) {
-      // FILA y COLUMNA exactas (unarias, las más restrictivas — T cells)
-      porChar[P.id].push({
-        texto: `${P.nombre} estaba en la fila ${P.r + 1}.`,
-        check: s => { const p = s[P.id]; if (!p) return null; return p.r === P.r; },
-        a: P.id, peso: 7,
-      });
-      porChar[P.id].push({
-        texto: `${P.nombre} estaba en la columna ${P.c + 1}.`,
-        check: s => { const p = s[P.id]; if (!p) return null; return p.c === P.c; },
-        a: P.id, peso: 7,
-      });
+      const h = this.habitaciones[P.r][P.c];
+      conteoPorHab[h] = (conteoPorHab[h] || 0) + 1;
+    }
 
-      // HABITACIÓN por color (unaria, restrictiva)
+    for (const P of todos) {
       const habP = this.habitaciones[P.r][P.c];
-      const colorHab = NOMBRE_HAB[(habP - 1) % NOMBRE_HAB.length];
+      const nomHabP = this.nombreHabitacion[habP] || `la habitación ${habP}`;
+
+      // FILA y COLUMNA exactas — más restrictivas
+      porChar[P.id].push({ texto: pick(PHRASE_FILA)(P), check: s => { const p = s[P.id]; if (!p) return null; return p.r === P.r; }, a: P.id, peso: 7 });
+      porChar[P.id].push({ texto: pick(PHRASE_COL)(P),  check: s => { const p = s[P.id]; if (!p) return null; return p.c === P.c; }, a: P.id, peso: 7 });
+
+      // Habitación por nombre temático
       porChar[P.id].push({
-        texto: `${P.nombre} estaba en la habitación ${colorHab}.`,
+        texto: pick(PHRASE_HAB)(P, nomHabP),
         check: s => { const p = s[P.id]; if (!p) return null; return this.habitaciones[p.r][p.c] === habP; },
         a: P.id, peso: 6,
       });
 
-      // Paredes (unaria, restrictiva)
-      if (P.r === 0)   porChar[P.id].push({ texto: `${P.nombre} estaba pegado a la pared norte.`,  check: s => { const p = s[P.id]; if (!p) return null; return p.r === 0; },   a: P.id, peso: 5 });
-      if (P.r === T-1) porChar[P.id].push({ texto: `${P.nombre} estaba pegado a la pared sur.`,    check: s => { const p = s[P.id]; if (!p) return null; return p.r === T-1; }, a: P.id, peso: 5 });
-      if (P.c === 0)   porChar[P.id].push({ texto: `${P.nombre} estaba pegado a la pared oeste.`,  check: s => { const p = s[P.id]; if (!p) return null; return p.c === 0; },   a: P.id, peso: 5 });
-      if (P.c === T-1) porChar[P.id].push({ texto: `${P.nombre} estaba pegado a la pared este.`,   check: s => { const p = s[P.id]; if (!p) return null; return p.c === T-1; }, a: P.id, peso: 5 });
+      // "Único en el salón" — sólo si P es el único personaje en su habitación
+      if (conteoPorHab[habP] === 1) {
+        porChar[P.id].push({
+          texto: `${P.nombre} estaba solo en ${nomHabP}.`,
+          check: s => {
+            const p = s[P.id]; if (!p) return null;
+            const h = this.habitaciones[p.r][p.c];
+            if (h !== habP) return false;
+            for (const Q of todos) {
+              if (Q.id === P.id) continue;
+              const q = s[Q.id]; if (!q) return null;
+              if (this.habitaciones[q.r][q.c] === habP) return false;
+            }
+            return true;
+          },
+          a: P.id, peso: 7,
+        });
+      }
 
-      // Obstáculo adyacente (unaria, restrictiva)
-      const dirs = [["arriba",-1,0],["abajo",1,0],["a su izquierda",0,-1],["a su derecha",0,1]];
+      // Paredes
+      if (P.r === 0)   porChar[P.id].push({ texto: PHRASE_PARED.norte(P), check: s => { const p = s[P.id]; if (!p) return null; return p.r === 0; },   a: P.id, peso: 5 });
+      if (P.r === T-1) porChar[P.id].push({ texto: PHRASE_PARED.sur(P),   check: s => { const p = s[P.id]; if (!p) return null; return p.r === T-1; }, a: P.id, peso: 5 });
+      if (P.c === 0)   porChar[P.id].push({ texto: PHRASE_PARED.oeste(P), check: s => { const p = s[P.id]; if (!p) return null; return p.c === 0; },   a: P.id, peso: 5 });
+      if (P.c === T-1) porChar[P.id].push({ texto: PHRASE_PARED.este(P),  check: s => { const p = s[P.id]; if (!p) return null; return p.c === T-1; }, a: P.id, peso: 5 });
+
+      // Obstáculo adyacente (con nombre concreto del mueble)
+      const dirs = [["norte",-1,0],["sur",1,0],["oeste",0,-1],["este",0,1]];
       for (const [nd, dr, dc] of dirs) {
         const nr = P.r + dr, nc = P.c + dc;
         if (nr >= 0 && nr < T && nc >= 0 && nc < T && this.tableroReal[nr][nc] === 'X') {
+          const nomObs = this.nombreObstaculo[nr + ',' + nc] || 'un objeto';
           porChar[P.id].push({
-            texto: `${P.nombre} tenía un obstáculo ${nd}.`,
+            texto: pick(PHRASE_OBS)(P, nomObs, nd),
             check: s => {
               const p = s[P.id]; if (!p) return null;
               const nr2 = p.r + dr, nc2 = p.c + dc;
               if (nr2 < 0 || nr2 >= T || nc2 < 0 || nc2 >= T) return false;
               return this.tableroReal[nr2][nc2] === 'X';
             },
-            a: P.id, peso: 4,
+            a: P.id, peso: 5,
           });
         }
       }
 
-      // Relaciones binarias (con otros personajes)
+      // Relaciones binarias con cada otro personaje
       for (const Q of todos) {
         if (Q.id === P.id) continue;
         const dist = Math.abs(P.r - Q.r) + Math.abs(P.c - Q.c);
-        const habP = this.habitaciones[P.r][P.c];
         const habQ = this.habitaciones[Q.r][Q.c];
 
         porChar[P.id].push({
-          texto: `${P.nombre} estaba a ${dist} casillas de ${Q.nombre}.`,
+          texto: pick(PHRASE_DIST)(P, Q, dist),
           check: s => { const a = s[P.id], b = s[Q.id]; if (!a || !b) return null; return Math.abs(a.r - b.r) + Math.abs(a.c - b.c) === dist; },
           a: P.id, b: Q.id, peso: 2,
         });
 
         if (habP === habQ) {
           porChar[P.id].push({
-            texto: `${P.nombre} compartía habitación con ${Q.nombre}.`,
+            texto: pick(PHRASE_HAB_PAR)(P, Q),
             check: s => { const a = s[P.id], b = s[Q.id]; if (!a || !b) return null; return this.habitaciones[a.r][a.c] === this.habitaciones[b.r][b.c]; },
             a: P.id, b: Q.id, peso: 3,
           });
         } else {
           porChar[P.id].push({
-            texto: `${P.nombre} no compartía habitación con ${Q.nombre}.`,
+            texto: pick(PHRASE_NOHAB_PAR)(P, Q),
             check: s => { const a = s[P.id], b = s[Q.id]; if (!a || !b) return null; return this.habitaciones[a.r][a.c] !== this.habitaciones[b.r][b.c]; },
             a: P.id, b: Q.id, peso: 1,
           });
         }
 
-        if (P.r < Q.r)      porChar[P.id].push({ texto: `${P.nombre} estaba al norte de ${Q.nombre}.`, check: s => { const a = s[P.id], b = s[Q.id]; if (!a || !b) return null; return a.r < b.r; }, a: P.id, b: Q.id, peso: 2 });
-        else if (P.r > Q.r) porChar[P.id].push({ texto: `${P.nombre} estaba al sur de ${Q.nombre}.`,   check: s => { const a = s[P.id], b = s[Q.id]; if (!a || !b) return null; return a.r > b.r; }, a: P.id, b: Q.id, peso: 2 });
-        if (P.c < Q.c)      porChar[P.id].push({ texto: `${P.nombre} estaba al oeste de ${Q.nombre}.`, check: s => { const a = s[P.id], b = s[Q.id]; if (!a || !b) return null; return a.c < b.c; }, a: P.id, b: Q.id, peso: 2 });
-        else if (P.c > Q.c) porChar[P.id].push({ texto: `${P.nombre} estaba al este de ${Q.nombre}.`,  check: s => { const a = s[P.id], b = s[Q.id]; if (!a || !b) return null; return a.c > b.c; }, a: P.id, b: Q.id, peso: 2 });
+        if (P.r < Q.r)      porChar[P.id].push({ texto: PHRASE_DIR_PAR.norte(P, Q), check: s => { const a = s[P.id], b = s[Q.id]; if (!a || !b) return null; return a.r < b.r; }, a: P.id, b: Q.id, peso: 2 });
+        else if (P.r > Q.r) porChar[P.id].push({ texto: PHRASE_DIR_PAR.sur(P, Q),   check: s => { const a = s[P.id], b = s[Q.id]; if (!a || !b) return null; return a.r > b.r; }, a: P.id, b: Q.id, peso: 2 });
+        if (P.c < Q.c)      porChar[P.id].push({ texto: PHRASE_DIR_PAR.oeste(P, Q), check: s => { const a = s[P.id], b = s[Q.id]; if (!a || !b) return null; return a.c < b.c; }, a: P.id, b: Q.id, peso: 2 });
+        else if (P.c > Q.c) porChar[P.id].push({ texto: PHRASE_DIR_PAR.este(P, Q),  check: s => { const a = s[P.id], b = s[Q.id]; if (!a || !b) return null; return a.c > b.c; }, a: P.id, b: Q.id, peso: 2 });
       }
     }
     return porChar;
@@ -450,6 +564,7 @@ const state = {
   fichaActiva: null,
   longPressed: false,
   pressTimer: null,
+  autoCross: true,
 };
 
 const $ = id => document.getElementById(id);
@@ -482,6 +597,18 @@ function renderTablero() {
   const cell = Math.max(28, Math.floor(maxBoard / T));
   wrap.style.gridTemplateColumns = `repeat(${T}, ${cell}px)`;
 
+  // Cálculo de filas/columnas tachadas (auto-cross)
+  const filasOcupadas = new Set();
+  const colsOcupadas = new Set();
+  if (state.autoCross) {
+    for (let r = 0; r < T; r++) for (let c = 0; c < T; c++) {
+      if (eng.tableroJugador[r][c]) { filasOcupadas.add(r); colsOcupadas.add(c); }
+    }
+  }
+
+  // Etiquetas de salón: una por habitación, en su primera celda libre
+  const salonesEtiquetados = new Set();
+
   for (let r = 0; r < T; r++) {
     for (let c = 0; c < T; c++) {
       const div = document.createElement('div');
@@ -498,7 +625,18 @@ function renderTablero() {
       const real = eng.tableroReal[r][c];
       if (real === 'X') {
         div.classList.add('obstaculo');
+        const nomObs = eng.nombreObstaculo[r + ',' + c] || 'obstáculo';
+        div.title = nomObs;
       } else {
+        // Etiqueta de salón: en la primera celda libre de cada habitación
+        if (!salonesEtiquetados.has(hab) && cell >= 36) {
+          salonesEtiquetados.add(hab);
+          const lbl = document.createElement('div');
+          lbl.className = 'room-label';
+          lbl.textContent = eng.nombreHabitacion[hab] || '';
+          div.appendChild(lbl);
+        }
+
         const placed = eng.tableroJugador[r][c];
         if (placed === 'V') {
           const inner = document.createElement('div');
@@ -521,6 +659,11 @@ function renderTablero() {
             ndiv.textContent = [...notas].sort().join(' ');
             ndiv.style.fontSize = Math.max(8, Math.min(11, Math.floor(cell / 5))) + 'px';
             div.appendChild(ndiv);
+          } else if (state.autoCross && (filasOcupadas.has(r) || colsOcupadas.has(c))) {
+            const x = document.createElement('div');
+            x.className = 'auto-cross';
+            x.textContent = '×';
+            div.appendChild(x);
           }
         }
         attachCellHandlers(div, r, c);
@@ -719,6 +862,14 @@ function init() {
   $('limpiar').addEventListener('click', limpiarTablero);
   $('revelar').addEventListener('click', rendirse);
   $('modalCerrar').addEventListener('click', () => $('modal').classList.remove('show'));
+  const ac = $('autoCross');
+  if (ac) {
+    state.autoCross = ac.checked;
+    ac.addEventListener('change', () => {
+      state.autoCross = ac.checked;
+      if (state.engine) renderTablero();
+    });
+  }
   window.addEventListener('resize', () => { if (state.engine) renderTablero(); });
   nuevoCaso();
 }
