@@ -6,8 +6,8 @@
 'use strict';
 
 const CONFIG_DIFICULTAD = {
-  muy_facil:   { tamano: 6,  sospechosos: 4,  habitaciones: 3, obstaculos: 4  },
-  facil:       { tamano: 8,  sospechosos: 6,  habitaciones: 4, obstaculos: 6  },
+  muy_facil:   { tamano: 6,  sospechosos: 5,  habitaciones: 3, obstaculos: 4  },
+  facil:       { tamano: 8,  sospechosos: 7,  habitaciones: 4, obstaculos: 6  },
   moderado:    { tamano: 10, sospechosos: 9,  habitaciones: 5, obstaculos: 10 },
   dificil:     { tamano: 12, sospechosos: 11, habitaciones: 6, obstaculos: 15 },
   muy_dificil: { tamano: 16, sospechosos: 15, habitaciones: 8, obstaculos: 25 },
@@ -21,6 +21,11 @@ const NOMBRES = [
 const PALETA_HAB = [
   "#fde4cf","#e4f1fe","#e9f5db","#fff1c1","#fbe5e1",
   "#e0d7f5","#d6efe1","#fcd5ce","#ddedea","#f0e1d4",
+];
+
+const NOMBRE_HAB = [
+  "color durazno","color cielo","color menta","color amarillo","color rosa",
+  "color violeta","color verde","color salmón","color salvia","color arena",
 ];
 
 const sleep = (ms = 0) => new Promise(r => setTimeout(r, ms));
@@ -199,7 +204,16 @@ class MurdokuEngine {
     for (const P of todos) porChar[P.id] = [];
 
     for (const P of todos) {
-      // Paredes (unaria, muy restrictiva)
+      // HABITACIÓN por color (unaria, la más restrictiva — clave para que el solver converja)
+      const habP = this.habitaciones[P.r][P.c];
+      const colorHab = NOMBRE_HAB[(habP - 1) % NOMBRE_HAB.length];
+      porChar[P.id].push({
+        texto: `${P.nombre} estaba en la habitación ${colorHab}.`,
+        check: s => { const p = s[P.id]; if (!p) return null; return this.habitaciones[p.r][p.c] === habP; },
+        a: P.id, peso: 6,
+      });
+
+      // Paredes (unaria, restrictiva)
       if (P.r === 0)   porChar[P.id].push({ texto: `${P.nombre} estaba pegado a la pared norte.`,  check: s => { const p = s[P.id]; if (!p) return null; return p.r === 0; },   a: P.id, peso: 5 });
       if (P.r === T-1) porChar[P.id].push({ texto: `${P.nombre} estaba pegado a la pared sur.`,    check: s => { const p = s[P.id]; if (!p) return null; return p.r === T-1; }, a: P.id, peso: 5 });
       if (P.c === 0)   porChar[P.id].push({ texto: `${P.nombre} estaba pegado a la pared oeste.`,  check: s => { const p = s[P.id]; if (!p) return null; return p.c === 0; },   a: P.id, peso: 5 });
@@ -259,57 +273,50 @@ class MurdokuEngine {
     return porChar;
   }
 
+  ordenarPistas(elegidas, todos) {
+    const ordenId = todos.map(P => P.id);
+    return [...elegidas].sort((a, b) => ordenId.indexOf(a.a) - ordenId.indexOf(b.a));
+  }
+
   async crearPistasUnaPorPersona() {
     const todos = this.todosPersonajes();
     const porChar = this.generarPistasCandidatasPorChar();
     for (const P of todos) {
       if (porChar[P.id].length === 0) return false;
-      porChar[P.id].sort((a, b) => b.peso - a.peso);
+      // sort by peso desc, with small random tiebreak para variar
+      porChar[P.id].sort((a, b) => (b.peso - a.peso) + (Math.random() - 0.5) * 0.4);
     }
     const maxPasos = this.maxPasosSolver();
 
-    // Construcción GREEDY: para cada personaje, elige (entre sus 6 mejores
-    // pistas) la que minimiza el conteo de soluciones al añadirla al set
-    // acumulado. Repite con varias semillas de orden si no converge.
-    const semillas = this.tamano <= 8 ? 8 : this.tamano <= 12 ? 6 : 4;
-    for (let semilla = 0; semilla < semillas; semilla++) {
-      const ordenChars = [...todos];
-      // Primera semilla = peso descendente; siguientes = aleatorias
-      if (semilla === 0) {
-        ordenChars.sort((a, b) => porChar[b.id][0].peso - porChar[a.id][0].peso);
-      } else {
-        shuffle(ordenChars);
-      }
-      const elegidas = [];
-      const topN = this.tamano <= 8 ? 6 : 4;
-      let abortar = false;
-      for (const P of ordenChars) {
-        const candidatas = porChar[P.id].slice(0, Math.min(topN, porChar[P.id].length));
-        let mejorPista = null;
-        let mejorConteo = Infinity;
-        for (const pista of candidatas) {
-          const probe = [...elegidas, pista];
-          const conteo = this.contarSoluciones(probe, 2, maxPasos);
-          if (conteo < mejorConteo) {
-            mejorConteo = conteo;
-            mejorPista = pista;
-            if (conteo <= 1) break;
-          }
-        }
-        if (!mejorPista) { abortar = true; break; }
-        elegidas.push(mejorPista);
-        if (mejorConteo === 0) { abortar = true; break; }
-        await sleep(0);
-      }
-      if (abortar) continue;
-      const final = this.contarSoluciones(elegidas, 2, maxPasos);
-      if (final === 1) {
-        const ordenId = todos.map(P => P.id);
-        elegidas.sort((a, b) => ordenId.indexOf(a.a) - ordenId.indexOf(b.a));
-        this.pistas = elegidas;
+    // Estado inicial: la mejor pista (peso más alto) por personaje
+    let elegidas = todos.map(P => porChar[P.id][0]);
+    let res = this.contarSoluciones(elegidas, 2, maxPasos);
+    if (res === 1) {
+      this.pistas = this.ordenarPistas(elegidas, todos);
+      return true;
+    }
+
+    // Hill-climb: swap aleatorio de la pista de un personaje, acepta si mejora
+    const maxIters = this.tamano <= 8 ? 80 : this.tamano <= 12 ? 120 : 160;
+    for (let iter = 0; iter < maxIters; iter++) {
+      const ix = randInt(todos.length);
+      const pool = porChar[todos[ix].id];
+      if (pool.length === 1) continue;
+      const topPool = Math.min(8, pool.length);
+      const nueva = pool[randInt(topPool)];
+      if (nueva === elegidas[ix]) continue;
+      const cand = elegidas.slice();
+      cand[ix] = nueva;
+      const c = this.contarSoluciones(cand, 2, maxPasos);
+      if (c === 1) {
+        this.pistas = this.ordenarPistas(cand, todos);
         return true;
       }
-      await sleep(0);
+      if (c < res || (c === res && Math.random() < 0.25)) {
+        res = c;
+        elegidas = cand;
+      }
+      if (iter % 6 === 5) await sleep(0);
     }
     return false;
   }
