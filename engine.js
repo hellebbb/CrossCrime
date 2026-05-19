@@ -204,7 +204,19 @@ class MurdokuEngine {
     for (const P of todos) porChar[P.id] = [];
 
     for (const P of todos) {
-      // HABITACIÓN por color (unaria, la más restrictiva — clave para que el solver converja)
+      // FILA y COLUMNA exactas (unarias, las más restrictivas — T cells)
+      porChar[P.id].push({
+        texto: `${P.nombre} estaba en la fila ${P.r + 1}.`,
+        check: s => { const p = s[P.id]; if (!p) return null; return p.r === P.r; },
+        a: P.id, peso: 7,
+      });
+      porChar[P.id].push({
+        texto: `${P.nombre} estaba en la columna ${P.c + 1}.`,
+        check: s => { const p = s[P.id]; if (!p) return null; return p.c === P.c; },
+        a: P.id, peso: 7,
+      });
+
+      // HABITACIÓN por color (unaria, restrictiva)
       const habP = this.habitaciones[P.r][P.c];
       const colorHab = NOMBRE_HAB[(habP - 1) % NOMBRE_HAB.length];
       porChar[P.id].push({
@@ -283,38 +295,62 @@ class MurdokuEngine {
     const porChar = this.generarPistasCandidatasPorChar();
     for (const P of todos) {
       if (porChar[P.id].length === 0) return false;
-      // sort by peso desc, with small random tiebreak para variar
       porChar[P.id].sort((a, b) => (b.peso - a.peso) + (Math.random() - 0.5) * 0.4);
     }
     const maxPasos = this.maxPasosSolver();
+    const LIMITE_HC = 8; // limite alto para señal granular durante hill-climb
 
-    // Estado inicial: la mejor pista (peso más alto) por personaje
+    const score = (r) => r.count + (r.abortado ? 50 : 0);
+
+    // Inicial: diversificar — mitad fila exacta, mitad columna exacta cuando exista
     let elegidas = todos.map(P => porChar[P.id][0]);
+    // Mezcla 50/50 fila/columna del top pool si los hay
+    for (let i = 0; i < todos.length; i++) {
+      const pool = porChar[todos[i].id];
+      const filaP = pool.find(p => p.texto.includes('en la fila'));
+      const colP = pool.find(p => p.texto.includes('en la columna'));
+      if (filaP && colP) elegidas[i] = (i % 2 === 0) ? filaP : colP;
+    }
+
     let res = this.contarSoluciones(elegidas, 2, maxPasos);
-    if (res === 1) {
+    if (res.count === 1 && !res.abortado) {
       this.pistas = this.ordenarPistas(elegidas, todos);
       return true;
     }
+    let mejorScore = score(this.contarSoluciones(elegidas, LIMITE_HC, maxPasos));
 
-    // Hill-climb: swap aleatorio de la pista de un personaje, acepta si mejora
-    const maxIters = this.tamano <= 8 ? 80 : this.tamano <= 12 ? 120 : 160;
+    const maxIters = this.tamano <= 8 ? 140 : this.tamano <= 12 ? 200 : 260;
+    let sinMejora = 0;
     for (let iter = 0; iter < maxIters; iter++) {
       const ix = randInt(todos.length);
       const pool = porChar[todos[ix].id];
       if (pool.length === 1) continue;
-      const topPool = Math.min(8, pool.length);
+      const topPool = Math.min(10, pool.length);
       const nueva = pool[randInt(topPool)];
       if (nueva === elegidas[ix]) continue;
       const cand = elegidas.slice();
       cand[ix] = nueva;
-      const c = this.contarSoluciones(cand, 2, maxPasos);
-      if (c === 1) {
+      const r = this.contarSoluciones(cand, LIMITE_HC, maxPasos);
+      if (r.count === 1 && !r.abortado) {
         this.pistas = this.ordenarPistas(cand, todos);
         return true;
       }
-      if (c < res || (c === res && Math.random() < 0.25)) {
-        res = c;
+      const s = score(r);
+      if (s < mejorScore || (s === mejorScore && Math.random() < 0.2)) {
+        mejorScore = s;
         elegidas = cand;
+        sinMejora = 0;
+      } else {
+        sinMejora++;
+      }
+      // Reinicio aleatorio si nos atascamos
+      if (sinMejora > 25) {
+        elegidas = todos.map(P => {
+          const pool = porChar[P.id];
+          return pool[randInt(Math.min(6, pool.length))];
+        });
+        mejorScore = score(this.contarSoluciones(elegidas, LIMITE_HC, maxPasos));
+        sinMejora = 0;
       }
       if (iter % 6 === 5) await sleep(0);
     }
@@ -401,8 +437,7 @@ class MurdokuEngine {
     };
 
     dfs(0);
-    if (abortado) return Math.max(soluciones, limite);
-    return soluciones;
+    return { count: soluciones, abortado };
   }
 }
 
