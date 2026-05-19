@@ -49,7 +49,10 @@ const NOMBRES_OBSTACULOS = [
   "una vitrina","un escritorio","una estatua","un reloj de péndulo",
   "un perchero","una jaula vacía","un maniquí","un cofre","un baúl",
   "una mesa de billar","una pecera de cristal","un samovar grande",
-  "una armadura","un atril","un globo terráqueo",
+  "una armadura","un atril","un globo terráqueo","una caja fuerte",
+  "un buró","un cuadro grande","una vasija enorme","un órgano",
+  "un retablo","una urna","un trono","una caldera","una tina antigua",
+  "un escudo","un yunque","un telar","una jaula con cuervo",
 ];
 
 // USABLES — muebles donde un personaje SÍ puede estar encima (silla, cama, etc.)
@@ -316,13 +319,16 @@ class MurdokuEngine {
 
   colocarObstaculosExtra(cuantos) {
     const T = this.tamano;
-    let n = 0, intentos = 0;
+    const usadas = new Set(Object.values(this.nombreObstaculo));
+    const disponibles = shuffle(NOMBRES_OBSTACULOS.filter(n => !usadas.has(n)));
+    let n = 0, intentos = 0, asignados = 0;
     while (n < cuantos && intentos < cuantos * 50 + 20) {
       intentos++;
       const r = randInt(T), c = randInt(T);
       if (this.tableroReal[r][c] !== null) continue;
       this.tableroReal[r][c] = 'X';
-      this.nombreObstaculo[r + ',' + c] = pick(NOMBRES_OBSTACULOS);
+      this.nombreObstaculo[r + ',' + c] = disponibles[asignados] || 'un objeto bloqueador';
+      asignados++;
       n++;
     }
   }
@@ -347,9 +353,9 @@ class MurdokuEngine {
       const habP = this.habitaciones[P.r][P.c];
       const nomHabP = this.nombreHabitacion[habP] || `la habitación ${habP}`;
 
-      // FILA y COLUMNA exactas — más restrictivas
-      porChar[P.id].push({ texto: pick(PHRASE_FILA)(P), check: s => { const p = s[P.id]; if (!p) return null; return p.r === P.r; }, a: P.id, peso: 7 });
-      porChar[P.id].push({ texto: pick(PHRASE_COL)(P),  check: s => { const p = s[P.id]; if (!p) return null; return p.c === P.c; }, a: P.id, peso: 7 });
+      // FILA y COLUMNA exactas (abstractas, sin referencia visual)
+      porChar[P.id].push({ texto: pick(PHRASE_FILA)(P), check: s => { const p = s[P.id]; if (!p) return null; return p.r === P.r; }, a: P.id, peso: 5 });
+      porChar[P.id].push({ texto: pick(PHRASE_COL)(P),  check: s => { const p = s[P.id]; if (!p) return null; return p.c === P.c; }, a: P.id, peso: 5 });
 
       // Habitación por nombre temático
       porChar[P.id].push({
@@ -437,32 +443,76 @@ class MurdokuEngine {
         });
       }
 
-      // Relaciones binarias con cada otro personaje
-      // (sin pistas de distancia — son ambiguas)
-      // (sin pistas que delaten "X compartía habitación con la víctima" — eso revela al asesino)
+      // === Pistas de PERSONAJE vs OBJETO (obstáculos y muebles con nombre único) ===
+      // Estas son las "narrativas" que el usuario pidió.
+
+      const anchorRefs = []; // [{key:"r,c", nombre, r, c, esMueble}]
+      for (const [key, nombre] of Object.entries(this.nombreObstaculo)) {
+        const [or_, oc_] = key.split(',').map(Number);
+        anchorRefs.push({ r: or_, c: oc_, nombre, esMueble: false });
+      }
+      for (const [key, nombre] of Object.entries(this.mueble)) {
+        const [mr, mc] = key.split(',').map(Number);
+        if (mr === P.r && mc === P.c) continue; // su propio mueble ya cubierto por "encima"
+        anchorRefs.push({ r: mr, c: mc, nombre, esMueble: true });
+      }
+
+      for (const A of anchorRefs) {
+        // Misma fila / misma columna que un objeto con nombre único
+        if (P.r === A.r) {
+          porChar[P.id].push({
+            texto: `${P.nombre} estaba en la misma fila que ${A.nombre}.`,
+            check: s => { const p = s[P.id]; if (!p) return null; return p.r === A.r; },
+            a: P.id, peso: 6,
+          });
+        }
+        if (P.c === A.c) {
+          porChar[P.id].push({
+            texto: `${P.nombre} estaba en la misma columna que ${A.nombre}.`,
+            check: s => { const p = s[P.id]; if (!p) return null; return p.c === A.c; },
+            a: P.id, peso: 6,
+          });
+        }
+        // Dirección general respecto al objeto
+        if (P.r < A.r) porChar[P.id].push({ texto: `${P.nombre} estaba al norte de ${A.nombre}.`, check: s => { const p = s[P.id]; if (!p) return null; return p.r < A.r; }, a: P.id, peso: 3 });
+        else if (P.r > A.r) porChar[P.id].push({ texto: `${P.nombre} estaba al sur de ${A.nombre}.`, check: s => { const p = s[P.id]; if (!p) return null; return p.r > A.r; }, a: P.id, peso: 3 });
+        if (P.c < A.c) porChar[P.id].push({ texto: `${P.nombre} estaba al oeste de ${A.nombre}.`, check: s => { const p = s[P.id]; if (!p) return null; return p.c < A.c; }, a: P.id, peso: 3 });
+        else if (P.c > A.c) porChar[P.id].push({ texto: `${P.nombre} estaba al este de ${A.nombre}.`, check: s => { const p = s[P.id]; if (!p) return null; return p.c > A.c; }, a: P.id, peso: 3 });
+      }
+
+      // === Relaciones BINARIAS personaje-personaje ===
+      // Sin distancia (muy ambigua), sin pares con la víctima (delatarían al asesino).
       for (const Q of todos) {
         if (Q.id === P.id) continue;
         const habQ = this.habitaciones[Q.r][Q.c];
         const involucraVictima = (P.id === 'V' || Q.id === 'V');
 
+        // Habitación compartida o no — sólo si no involucra víctima
         if (habP === habQ && !involucraVictima) {
           porChar[P.id].push({
             texto: pick(PHRASE_HAB_PAR)(P, Q),
             check: s => { const a = s[P.id], b = s[Q.id]; if (!a || !b) return null; return this.habitaciones[a.r][a.c] === this.habitaciones[b.r][b.c]; },
-            a: P.id, b: Q.id, peso: 3,
+            a: P.id, b: Q.id, peso: 5,
           });
         } else if (habP !== habQ && !involucraVictima) {
           porChar[P.id].push({
             texto: pick(PHRASE_NOHAB_PAR)(P, Q),
             check: s => { const a = s[P.id], b = s[Q.id]; if (!a || !b) return null; return this.habitaciones[a.r][a.c] !== this.habitaciones[b.r][b.c]; },
-            a: P.id, b: Q.id, peso: 1,
+            a: P.id, b: Q.id, peso: 2,
           });
         }
 
-        if (P.r < Q.r)      porChar[P.id].push({ texto: PHRASE_DIR_PAR.norte(P, Q), check: s => { const a = s[P.id], b = s[Q.id]; if (!a || !b) return null; return a.r < b.r; }, a: P.id, b: Q.id, peso: 2 });
-        else if (P.r > Q.r) porChar[P.id].push({ texto: PHRASE_DIR_PAR.sur(P, Q),   check: s => { const a = s[P.id], b = s[Q.id]; if (!a || !b) return null; return a.r > b.r; }, a: P.id, b: Q.id, peso: 2 });
-        if (P.c < Q.c)      porChar[P.id].push({ texto: PHRASE_DIR_PAR.oeste(P, Q), check: s => { const a = s[P.id], b = s[Q.id]; if (!a || !b) return null; return a.c < b.c; }, a: P.id, b: Q.id, peso: 2 });
-        else if (P.c > Q.c) porChar[P.id].push({ texto: PHRASE_DIR_PAR.este(P, Q),  check: s => { const a = s[P.id], b = s[Q.id]; if (!a || !b) return null; return a.c > b.c; }, a: P.id, b: Q.id, peso: 2 });
+        // Offset exacto: "justo una fila al norte de Y" (más específico que dirección genérica)
+        if (P.r === Q.r - 1) porChar[P.id].push({ texto: `${P.nombre} estaba una fila más al norte que ${Q.nombre}.`, check: s => { const a = s[P.id], b = s[Q.id]; if (!a || !b) return null; return a.r === b.r - 1; }, a: P.id, b: Q.id, peso: 6 });
+        else if (P.r === Q.r + 1) porChar[P.id].push({ texto: `${P.nombre} estaba una fila más al sur que ${Q.nombre}.`, check: s => { const a = s[P.id], b = s[Q.id]; if (!a || !b) return null; return a.r === b.r + 1; }, a: P.id, b: Q.id, peso: 6 });
+        if (P.c === Q.c - 1) porChar[P.id].push({ texto: `${P.nombre} estaba una columna más al oeste que ${Q.nombre}.`, check: s => { const a = s[P.id], b = s[Q.id]; if (!a || !b) return null; return a.c === b.c - 1; }, a: P.id, b: Q.id, peso: 6 });
+        else if (P.c === Q.c + 1) porChar[P.id].push({ texto: `${P.nombre} estaba una columna más al este que ${Q.nombre}.`, check: s => { const a = s[P.id], b = s[Q.id]; if (!a || !b) return null; return a.c === b.c + 1; }, a: P.id, b: Q.id, peso: 6 });
+
+        // Dirección genérica
+        if (P.r < Q.r)      porChar[P.id].push({ texto: PHRASE_DIR_PAR.norte(P, Q), check: s => { const a = s[P.id], b = s[Q.id]; if (!a || !b) return null; return a.r < b.r; }, a: P.id, b: Q.id, peso: 4 });
+        else if (P.r > Q.r) porChar[P.id].push({ texto: PHRASE_DIR_PAR.sur(P, Q),   check: s => { const a = s[P.id], b = s[Q.id]; if (!a || !b) return null; return a.r > b.r; }, a: P.id, b: Q.id, peso: 4 });
+        if (P.c < Q.c)      porChar[P.id].push({ texto: PHRASE_DIR_PAR.oeste(P, Q), check: s => { const a = s[P.id], b = s[Q.id]; if (!a || !b) return null; return a.c < b.c; }, a: P.id, b: Q.id, peso: 4 });
+        else if (P.c > Q.c) porChar[P.id].push({ texto: PHRASE_DIR_PAR.este(P, Q),  check: s => { const a = s[P.id], b = s[Q.id]; if (!a || !b) return null; return a.c > b.c; }, a: P.id, b: Q.id, peso: 4 });
       }
     }
     return porChar;
@@ -485,15 +535,25 @@ class MurdokuEngine {
 
     const score = (r) => r.count + (r.abortado ? 50 : 0);
 
-    // Inicial: diversificar — mitad fila exacta, mitad columna exacta cuando exista
-    let elegidas = todos.map(P => porChar[P.id][0]);
-    // Mezcla 50/50 fila/columna del top pool si los hay
-    for (let i = 0; i < todos.length; i++) {
-      const pool = porChar[todos[i].id];
-      const filaP = pool.find(p => p.texto.includes('en la fila'));
-      const colP = pool.find(p => p.texto.includes('en la columna'));
-      if (filaP && colP) elegidas[i] = (i % 2 === 0) ? filaP : colP;
-    }
+    // Inicial: si el personaje tiene una pista "encima de mueble único" (peso 9), úsala.
+    // Para los demás, alterna entre fila/columna/habitación para diversificar.
+    let elegidas = todos.map((P, i) => {
+      const pool = porChar[P.id];
+      const top = pool.find(p => p.peso >= 9);
+      if (top) return top;
+      // Si no hay encima-de-mueble, escoge según índice para variar
+      const tipo = i % 3;
+      if (tipo === 0) {
+        const enFila = pool.find(p => p.peso === 5 && /en la fila/.test(p.texto)) || pool[0];
+        return enFila;
+      } else if (tipo === 1) {
+        const enHab = pool.find(p => p.peso === 6 && /(en el|en la|encontraba en|permaneció en)/.test(p.texto)) || pool[0];
+        return enHab;
+      } else {
+        const enCol = pool.find(p => p.peso === 5 && /(en la columna|columna número|columna fue)/.test(p.texto)) || pool[0];
+        return enCol;
+      }
+    });
 
     let res = this.contarSoluciones(elegidas, 2, maxPasos);
     if (res.count === 1 && !res.abortado) {
